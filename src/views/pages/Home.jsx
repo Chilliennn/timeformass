@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { scheduleCoordinator } from '../../services/scheduleCoordinator.js';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import './Home.css';
 
@@ -13,6 +14,7 @@ function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [touchStart, setTouchStart] = useState(0);
   const [touchEnd, setTouchEnd] = useState(0);
+  const navigate = useNavigate();
   
   // Fetch parishes and schedules on mount
   const loadData = useCallback(async () => {
@@ -169,6 +171,20 @@ function Home() {
         </button>
       </header>
 
+      {/* Menu dropdown */}
+        {menuOpen && (
+        <div className="menu-dropdown">
+            <button 
+            className="menu-item"
+            onClick={() => {
+                setMenuOpen(false);
+                navigate('/login');
+            }}
+            >
+            Admin Login
+            </button>
+        </div>
+        )}
       {/* Hero Section */}
       <section className="hero">
         <img src="/hero-image.png" alt="Eucharist" className="hero-image" />
