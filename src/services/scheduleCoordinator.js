@@ -2,6 +2,7 @@ import { parishRepository } from '../repositories/parishRepository.js';
 import { scheduleRepository } from '../repositories/scheduleRepository.js';
 import { adminRepository } from '../repositories/adminRepository.js';
 import { updateRepository } from '../repositories/updateRepository.js';
+import { templateRepository } from '../repositories/templateRepository.js';
 import bcrypt from 'bcryptjs';  
 
 export const scheduleCoordinator = {
@@ -25,8 +26,31 @@ export const scheduleCoordinator = {
 
   // Get schedules for a specific day
   async getSchedulesForDay(parishId, dayOfWeek) {
-    return await scheduleRepository.findByDay(parishId, dayOfWeek);
-  },
+  // 1) Find admin for this parish
+  const admins = await adminRepository.findByParishId(parishId);
+  const admin = Array.isArray(admins) ? admins[0] : admins;
+  if (!admin) return [];
+
+  // 2) Get default template
+  const templates = await templateRepository.findByAdminId(admin.admin_id);
+  const defaultTemplate = (templates || []).find(t => t.is_default) || (templates && templates[0]);
+  if (!defaultTemplate) return [];
+
+  // 3) Get template schedules for this day
+  const allSchedules = await templateRepository.getTemplateSchedules(defaultTemplate.template_id);
+  
+  // 4) Filter by day_of_week
+  const daySchedules = (allSchedules || []).filter(s => s.day_of_week === dayOfWeek);
+  
+  // 5) Map to include mass type info correctly
+  return daySchedules.map(s => ({
+    ...s,
+    time: s.start_time,
+    type: s.mass_types?.name || '', // This is the mass type name
+    language: s.language || '',
+    notes: s.notes || ''
+  }));
+},
 
   // ===== ADMIN OPERATIONS =====
 
@@ -145,6 +169,40 @@ export const scheduleCoordinator = {
       schedules,
       updates: updates.slice(0, 10) // Last 10 updates
     };
+  },
+
+  // Get active schedules for landing page (from default templates)
+  // NOTE: scheduleCoordinator must use repositories only (no direct DB client)
+  async getActiveSchedules() {
+    // 1) get parishes
+    const parishes = await parishRepository.findAll();
+
+    const allSchedules = [];
+
+    for (const parish of parishes) {
+      // 2) find admin(s) for this parish
+      const admins = await adminRepository.findByParishId(parish.parish_id);
+      const admin = Array.isArray(admins) ? admins[0] : admins;
+      if (!admin) continue;
+
+      // 3) load templates for admin and pick default
+      const templates = await templateRepository.findByAdminId(admin.admin_id);
+      const defaultTemplate = (templates || []).find(t => t.is_default) || (templates && templates[0]);
+      if (!defaultTemplate) continue;
+
+      // 4) get template schedules (includes mass_types via repository join)
+      const schedules = await templateRepository.getTemplateSchedules(defaultTemplate.template_id);
+      if (!schedules || schedules.length === 0) continue;
+
+      // 5) attach parish info and collect
+      allSchedules.push(...schedules.map(s => ({
+        ...s,
+        parish_name: parish.name,
+        parish_location_url: parish.location_url
+      })));
+    }
+
+    return allSchedules;
   },
 
   // Update parish info (admin only)
