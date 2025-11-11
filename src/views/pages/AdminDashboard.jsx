@@ -30,11 +30,14 @@ function AdminDashboard() {
   const [editNotes, setEditNotes] = useState("");
   const [resizingSchedule, setResizingSchedule] = useState(null);
   const [resizeDirection, setResizeDirection] = useState(null);
-    const [isDragging, setIsDragging] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const [draggedSchedule, setDraggedSchedule] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const saveTimeoutRef = useRef(null);
   const savedMessageTimeoutRef = useRef(null);
+  const pointerDownRef = useRef(null);
+  const pendingDragRef = useRef(false);
+  const touchLongPressTimer = useRef(null);
   const navigate = useNavigate();
   const DAY_START_HOUR = 5;
   const resizeContextRef = useRef({ element: null });
@@ -74,7 +77,6 @@ function AdminDashboard() {
   const minutesToPixels = (minutes) => (minutes / 60) * HOUR_BLOCK_HEIGHT;
   const columnHeightPx = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_BLOCK_HEIGHT;
 
-  // Get week dates helper
   function getWeekDates(date) {
     const day = date.getDay();
     const diff = date.getDate() - day;
@@ -86,6 +88,83 @@ function AdminDashboard() {
       return d;
     });
   }
+
+  const getClientFromEvent = (e) => {
+    if (!e) return { clientX: 0, clientY: 0 };
+    if (e.touches && e.touches[0]) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    return { clientX: e.clientX, clientY: e.clientY };
+  };  
+
+  const handlePointerDown = (e, schedule) => {
+    if (resizingSchedule || placingMassType) return;
+    const { clientX, clientY } = getClientFromEvent(e);
+    pointerDownRef.current = { x: clientX, y: clientY, schedule, time: Date.now() };
+
+    // mouse: only start pending drag if the user pressed the move-handle explicitly
+    const isMouse = e.type === "mousedown";
+    const clickedHandle = e.target && e.target.closest && e.target.closest(".move-handle");
+
+    if (isMouse) {
+      pendingDragRef.current = !!clickedHandle;
+      if (pendingDragRef.current) {
+        // prevent text selection while dragging
+        e.preventDefault();
+      }
+    } else {
+      // touchstart: use long-press to initiate drag 
+      pendingDragRef.current = false;
+      if (e.type === "touchstart") {
+        touchLongPressTimer.current = setTimeout(() => {
+          pendingDragRef.current = false;
+          handleDragScheduleStart(e, schedule); // start drag after long press
+        }, 500); // 500ms long press
+      }
+    }
+  };
+
+  const handlePointerMove = (e, schedule) => {
+    if (!pointerDownRef.current) return;
+    const { clientX, clientY } = getClientFromEvent(e);
+    const dx = clientX - pointerDownRef.current.x;
+    const dy = clientY - pointerDownRef.current.y;
+    const dist = Math.hypot(dx, dy);
+
+    // if mouse moved enough, begin drag
+    if (pendingDragRef.current && dist > 6 && e.type.indexOf("mouse") !== -1) {
+      pendingDragRef.current = false;
+      handleDragScheduleStart(e, schedule);
+    }
+    // If already dragging, do nothing 
+  };
+
+const handlePointerUp = (e, schedule) => {
+    // cancel potential longpress if any
+    if (touchLongPressTimer.current) {
+      clearTimeout(touchLongPressTimer.current);
+      touchLongPressTimer.current = null;
+    }
+
+    // If we are currently dragging via drag state, end drag
+    if (isDragging && draggedSchedule) {
+      // handleDragScheduleEnd will be called by window mouseup/touchend listener — but call here to be safe
+      handleDragScheduleEnd();
+    } else {
+      // treat as click if pointerDownRef refers to same schedule and movement small
+      const pd = pointerDownRef.current;
+      if (pd && pd.schedule && pd.schedule.template_schedule_id === schedule.template_schedule_id) {
+        const { clientX, clientY } = getClientFromEvent(e);
+        const dx = clientX - pd.x;
+        const dy = clientY - pd.y;
+        if (Math.hypot(dx, dy) <= 6) {
+          // simple click: open editor
+          handleScheduleClick(e, schedule);
+        }
+      }
+    }
+
+    pointerDownRef.current = null;
+    pendingDragRef.current = false;
+  };
 
   // Load admin data
   useEffect(() => {
@@ -264,71 +343,88 @@ function AdminDashboard() {
     }
   };
 
-const handleDragScheduleStart = (e, schedule) => {
+  const handleDragScheduleStart = (e, schedule) => {
     if (resizingSchedule || placingMassType) return;
-    
+
     const rect = e.currentTarget.getBoundingClientRect();
     setDragOffset({
       x: e.clientX - rect.left,
-      y: e.clientY - rect.top
+      y: e.clientY - rect.top,
     });
     setDraggedSchedule(schedule);
     setIsDragging(true);
-    e.currentTarget.style.opacity = '0.5';
+    e.currentTarget.style.opacity = "0.5";
   };
 
-  const handleDragScheduleMove = useCallback((e) => {
-    if (!isDragging || !draggedSchedule) return;
-    
-    // Find the day column under cursor
-    const columns = document.querySelectorAll('.day-column-body');
-    let targetColumn = null;
-    let targetDayIndex = -1;
-    
-    for (let i = 0; i < columns.length; i++) {
-      const rect = columns[i].getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top && e.clientY <= rect.bottom) {
-        targetColumn = columns[i];
-        targetDayIndex = i;
-        break;
+  const handleDragScheduleMove = useCallback(
+    (e) => {
+      if (!isDragging || !draggedSchedule) return;
+
+      // Find the day column under cursor
+      const columns = document.querySelectorAll(".day-column-body");
+      let targetColumn = null;
+      let targetDayIndex = -1;
+
+      for (let i = 0; i < columns.length; i++) {
+        const rect = columns[i].getBoundingClientRect();
+        if (
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom
+        ) {
+          targetColumn = columns[i];
+          targetDayIndex = i;
+          break;
+        }
       }
-    }
-    
-    if (targetColumn && targetDayIndex >= 0) {
-      const rect = targetColumn.getBoundingClientRect();
-      const minuteHeight = rect.height / TOTAL_DAY_MINUTES;
-      const relativeY = e.clientY - rect.top - dragOffset.y;
-      const rawMinutes = relativeY / minuteHeight;
-      const snappedMinutes = Math.round(rawMinutes / MINUTE_STEP) * MINUTE_STEP;
-      
-      const startMinutes = Math.max(0, Math.min(TOTAL_DAY_MINUTES - MINUTE_STEP, snappedMinutes));
-      const duration = timeStringToMinutesFromStart(draggedSchedule.end_time) - 
-                       timeStringToMinutesFromStart(draggedSchedule.start_time);
-      const endMinutes = Math.min(TOTAL_DAY_MINUTES, startMinutes + duration);
-      
-      const targetDay = currentWeek[targetDayIndex].getDay() === 0 ? 7 : currentWeek[targetDayIndex].getDay();
-      
-      setSchedules(prev => prev.map(s => 
-        s.template_schedule_id === draggedSchedule.template_schedule_id
-          ? {
-              ...s,
-              day_of_week: targetDay,
-              start_time: minutesFromStartToTimeString(startMinutes),
-              end_time: minutesFromStartToTimeString(endMinutes)
-            }
-          : s
-      ));
-    }
-  }, [isDragging, draggedSchedule, TOTAL_DAY_MINUTES, dragOffset.y, currentWeek]);
+
+      if (targetColumn && targetDayIndex >= 0) {
+        const rect = targetColumn.getBoundingClientRect();
+        const minuteHeight = rect.height / TOTAL_DAY_MINUTES;
+        const relativeY = e.clientY - rect.top - dragOffset.y;
+        const rawMinutes = relativeY / minuteHeight;
+        const snappedMinutes =
+          Math.round(rawMinutes / MINUTE_STEP) * MINUTE_STEP;
+
+        const startMinutes = Math.max(
+          0,
+          Math.min(TOTAL_DAY_MINUTES - MINUTE_STEP, snappedMinutes)
+        );
+        const duration =
+          timeStringToMinutesFromStart(draggedSchedule.end_time) -
+          timeStringToMinutesFromStart(draggedSchedule.start_time);
+        const endMinutes = Math.min(TOTAL_DAY_MINUTES, startMinutes + duration);
+
+        const targetDay =
+          currentWeek[targetDayIndex].getDay() === 0
+            ? 7
+            : currentWeek[targetDayIndex].getDay();
+
+        setSchedules((prev) =>
+          prev.map((s) =>
+            s.template_schedule_id === draggedSchedule.template_schedule_id
+              ? {
+                  ...s,
+                  day_of_week: targetDay,
+                  start_time: minutesFromStartToTimeString(startMinutes),
+                  end_time: minutesFromStartToTimeString(endMinutes),
+                }
+              : s
+          )
+        );
+      }
+    },
+    [isDragging, draggedSchedule, TOTAL_DAY_MINUTES, dragOffset.y, currentWeek]
+  );
 
   const handleDragScheduleEnd = useCallback(async () => {
     if (!draggedSchedule) return;
-    
+
     const updatedSchedule = schedules.find(
-      s => s.template_schedule_id === draggedSchedule.template_schedule_id
+      (s) => s.template_schedule_id === draggedSchedule.template_schedule_id
     );
-    
+
     if (updatedSchedule) {
       try {
         await templateRepository.updateSchedule(
@@ -336,31 +432,41 @@ const handleDragScheduleStart = (e, schedule) => {
           {
             day_of_week: updatedSchedule.day_of_week,
             start_time: updatedSchedule.start_time,
-            end_time: updatedSchedule.end_time
+            end_time: updatedSchedule.end_time,
           }
         );
         setShowSavedMessage(true);
-        if (savedMessageTimeoutRef.current) clearTimeout(savedMessageTimeoutRef.current);
-        savedMessageTimeoutRef.current = setTimeout(() => setShowSavedMessage(false), 2000);
+        if (savedMessageTimeoutRef.current)
+          clearTimeout(savedMessageTimeoutRef.current);
+        savedMessageTimeoutRef.current = setTimeout(
+          () => setShowSavedMessage(false),
+          2000
+        );
       } catch (error) {
-        console.error('Failed to update schedule:', error);
+        console.error("Failed to update schedule:", error);
       }
     }
-    
+
     setIsDragging(false);
     setDraggedSchedule(null);
   }, [draggedSchedule, schedules]);
 
   useEffect(() => {
     if (isDragging) {
-      window.addEventListener('mousemove', handleDragScheduleMove);
-      window.addEventListener('mouseup', handleDragScheduleEnd);
+      window.addEventListener("mousemove", handleDragScheduleMove);
+      window.addEventListener("mouseup", handleDragScheduleEnd);
+      window.addEventListener("touchmove", handleDragScheduleMove, {
+        passive: false,
+      });
+      window.addEventListener("touchend", handleDragScheduleEnd);
       return () => {
-        window.removeEventListener('mousemove', handleDragScheduleMove);
-        window.removeEventListener('mouseup', handleDragScheduleEnd);
+        window.removeEventListener("mousemove", handleDragScheduleMove);
+        window.removeEventListener("mouseup", handleDragScheduleEnd);
+        window.removeEventListener("touchmove", handleDragScheduleMove);
+        window.removeEventListener("touchend", handleDragScheduleEnd);
       };
     }
-  }, [isDragging, handleDragScheduleMove, handleDragScheduleEnd]);  
+  }, [isDragging, handleDragScheduleMove, handleDragScheduleEnd]);
 
   // Add template
   const handleAddTemplate = async () => {
@@ -626,7 +732,7 @@ const handleDragScheduleStart = (e, schedule) => {
     navigate("/");
   };
 
-const renderScheduleBlock = (schedule) => {
+  const renderScheduleBlock = (schedule) => {
     const startMinutes = timeStringToMinutesFromStart(schedule.start_time);
     const endMinutes = timeStringToMinutesFromStart(schedule.end_time);
     const durationMinutes = Math.max(MINUTE_STEP, endMinutes - startMinutes);
@@ -643,12 +749,39 @@ const renderScheduleBlock = (schedule) => {
           backgroundColor: schedule.mass_types?.color || '#2C3E91',
           cursor: isDragging ? 'grabbing' : 'grab'
         }}
-        onMouseDown={(e) => !resizingSchedule && !placingMassType && handleDragScheduleStart(e, schedule)}
-        onClick={(e) => !isDragging && handleScheduleClick(e, schedule)}
+        /* pointer / mouse */
+        onMouseDown={(e) => handlePointerDown(e, schedule)}
+        onMouseMove={(e) => handlePointerMove(e, schedule)}
+        onMouseUp={(e) => handlePointerUp(e, schedule)}
+        /* touch for mobile */
+        onTouchStart={(e) => handlePointerDown(e, schedule)}
+        onTouchMove={(e) => {
+          // if longpress already started drag, prevent default to allow dragging
+          if (isDragging) e.preventDefault();
+          handlePointerMove(e, schedule);
+        }}
+        onTouchEnd={(e) => handlePointerUp(e, schedule)}
+        /* avoid accidental onClick while dragging: only call click if not dragging */
+        onClick={(e) => { if (!isDragging) handleScheduleClick(e, schedule); }}
       >
+        {/* small visible handle to indicate draggable area for mouse users */}
+        <div
+          className="move-handle"
+          title="Drag to move"
+          onMouseDown={() => {
+            // ensure clicking the handle begins pointer flow on desktop
+            // do not stop propagation — handlePointerDown reads the target
+          }}
+          onTouchStart={() => {
+            // touch: allow long-press to start move; don't block scrolling here
+          }}
+        >
+          ☰
+        </div>
         <div
           className="schedule-resize-handle schedule-resize-top"
           onMouseDown={(e) => handleResizeStart(e, schedule, 'top')}
+          onTouchStart={(e) => { e.stopPropagation(); handleResizeStart(e, schedule, 'top'); }}
         />
         <div className="schedule-block-content">
           <div className="schedule-block-header">
@@ -675,6 +808,7 @@ const renderScheduleBlock = (schedule) => {
         <div
           className="schedule-resize-handle schedule-resize-bottom"
           onMouseDown={(e) => handleResizeStart(e, schedule, 'bottom')}
+          onTouchStart={(e) => { e.stopPropagation(); handleResizeStart(e, schedule, 'bottom'); }}
         />
       </div>
     );
@@ -767,65 +901,69 @@ const renderScheduleBlock = (schedule) => {
           </div>
         )}
 
-<div className="schedule-calendar-wrapper">
-        {/* Calendar Grid */}
-        <div className="schedule-grid-container">
-          {/* Week Navigation */}
-          <div className="week-navigation">
-            <button
-              onClick={() =>
-                setCurrentWeek(
-                  getWeekDates(
-                    new Date(currentWeek[0].getTime() - 7 * 24 * 60 * 60 * 1000)
+        <div className="schedule-calendar-wrapper">
+          {/* Calendar Grid */}
+          <div className="schedule-grid-container">
+            {/* Week Navigation */}
+            <div className="week-navigation">
+              <button
+                onClick={() =>
+                  setCurrentWeek(
+                    getWeekDates(
+                      new Date(
+                        currentWeek[0].getTime() - 7 * 24 * 60 * 60 * 1000
+                      )
+                    )
                   )
-                )
-              }
-            >
-              ‹
-            </button>
-            <span className="week-label">
-              {currentWeek[0].toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-              })}{" "}
-              -{" "}
-              {currentWeek[6].toLocaleDateString("en-US", {
-                month: "long",
-                day: "numeric",
-              })}
-            </span>
-            <button
-              onClick={() =>
-                setCurrentWeek(
-                  getWeekDates(
-                    new Date(currentWeek[0].getTime() + 7 * 24 * 60 * 60 * 1000)
+                }
+              >
+                ‹
+              </button>
+              <span className="week-label">
+                {currentWeek[0].toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                })}{" "}
+                -{" "}
+                {currentWeek[6].toLocaleDateString("en-US", {
+                  month: "long",
+                  day: "numeric",
+                })}
+              </span>
+              <button
+                onClick={() =>
+                  setCurrentWeek(
+                    getWeekDates(
+                      new Date(
+                        currentWeek[0].getTime() + 7 * 24 * 60 * 60 * 1000
+                      )
+                    )
                   )
-                )
-              }
-            >
-              ›
-            </button>
-          </div>
-
-          {/* Grid */}
-          <div className="schedule-grid">
-            <div className="schedule-grid-header">
-              <div className="time-axis-header">Week</div>
-              {currentWeek.map((date, i) => (
-                <div key={i} className="day-header">
-                  <div className="day-number">{date.getDate()}</div>
-                  <div className="day-name">
-                    {
-                      ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                        date.getDay()
-                      ]
-                    }
-                  </div>
-                </div>
-              ))}
+                }
+              >
+                ›
+              </button>
             </div>
 
-            <div className="schedule-grid-scrollable">
+            {/* Grid */}
+            <div className="schedule-grid">
+              <div className="schedule-grid-header">
+                <div className="time-axis-header">Week</div>
+                {currentWeek.map((date, i) => (
+                  <div key={i} className="day-header">
+                    <div className="day-number">{date.getDate()}</div>
+                    <div className="day-name">
+                      {
+                        ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+                          date.getDay()
+                        ]
+                      }
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="schedule-grid-scrollable">
                 <div className="schedule-grid-content">
                   <div className="time-axis">
                     {hoursLabels.map((hour) => (
@@ -837,12 +975,16 @@ const renderScheduleBlock = (schedule) => {
 
                   {currentWeek.map((date, dayIndex) => {
                     const dbDay = date.getDay() === 0 ? 7 : date.getDay();
-                    const daySchedules = schedules.filter((s) => s.day_of_week === dbDay);
+                    const daySchedules = schedules.filter(
+                      (s) => s.day_of_week === dbDay
+                    );
 
                     return (
                       <div key={dayIndex} className="day-column">
                         <div
-                          className={`day-column-body ${placingMassType ? 'placing-mode' : ''}`}
+                          className={`day-column-body ${
+                            placingMassType ? "placing-mode" : ""
+                          }`}
                           style={{ height: `${columnHeightPx}px` }}
                           onClick={(event) => handleColumnClick(event, dbDay)}
                         >
@@ -851,7 +993,9 @@ const renderScheduleBlock = (schedule) => {
                               key={`${dayIndex}-${hour}`}
                               className="hour-guide"
                               style={{
-                                top: `${minutesToPixels((hour - DAY_START_HOUR) * 60)}px`,
+                                top: `${minutesToPixels(
+                                  (hour - DAY_START_HOUR) * 60
+                                )}px`,
                               }}
                             />
                           ))}
@@ -863,153 +1007,154 @@ const renderScheduleBlock = (schedule) => {
                   })}
                 </div>
               </div>
-          </div>
-        </div>
-
-        {/* Sidebar with updated mass types */}
-        <div className="admin-sidebar">
-          {/* Calendar component */}
-          <div className="calendar-widget">
-            <div className="calendar-widget-header">
-              <button
-                onClick={() => {
-                  const newDate = new Date(currentWeek[3]); 
-                  newDate.setMonth(newDate.getMonth() - 1);
-                  setCurrentWeek(getWeekDates(newDate));
-                }}
-              >
-                ‹
-              </button>
-              <span>
-                {new Date(currentWeek[3]).toLocaleDateString("en-US", {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </span>
-              <button
-                onClick={() => {
-                  const newDate = new Date(currentWeek[3]);
-                  newDate.setMonth(newDate.getMonth() + 1);
-                  setCurrentWeek(getWeekDates(newDate));
-                }}
-              >
-                ›
-              </button>
             </div>
-            <div className="calendar-widget-grid">
-              {/* Weekday headers */}
-              {["S", "M", "T", "W", "T", "F", "S"].map((day, i) => (
-                <div key={i} className="calendar-weekday-header">
-                  {day}
-                </div>
-              ))}
+          </div>
 
-              {/* Generate calendar days */}
-              {(() => {
-                const middleOfWeek = currentWeek[3];
-                const year = middleOfWeek.getFullYear();
-                const month = middleOfWeek.getMonth();
+          {/* Sidebar with updated mass types */}
+          <div className="admin-sidebar">
+            {/* Calendar component */}
+            <div className="calendar-widget">
+              <div className="calendar-widget-header">
+                <button
+                  onClick={() => {
+                    const newDate = new Date(currentWeek[3]);
+                    newDate.setMonth(newDate.getMonth() - 1);
+                    setCurrentWeek(getWeekDates(newDate));
+                  }}
+                >
+                  ‹
+                </button>
+                <span>
+                  {new Date(currentWeek[3]).toLocaleDateString("en-US", {
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </span>
+                <button
+                  onClick={() => {
+                    const newDate = new Date(currentWeek[3]);
+                    newDate.setMonth(newDate.getMonth() + 1);
+                    setCurrentWeek(getWeekDates(newDate));
+                  }}
+                >
+                  ›
+                </button>
+              </div>
+              <div className="calendar-widget-grid">
+                {/* Weekday headers */}
+                {["S", "M", "T", "W", "T", "F", "S"].map((day, i) => (
+                  <div key={i} className="calendar-weekday-header">
+                    {day}
+                  </div>
+                ))}
 
-                // First day of the month
-                const firstDay = new Date(year, month, 1);
-                const startingDayOfWeek = firstDay.getDay();
+                {/* Generate calendar days */}
+                {(() => {
+                  const middleOfWeek = currentWeek[3];
+                  const year = middleOfWeek.getFullYear();
+                  const month = middleOfWeek.getMonth();
 
-                // Last day of the month
-                const lastDay = new Date(year, month + 1, 0);
-                const daysInMonth = lastDay.getDate();
+                  // First day of the month
+                  const firstDay = new Date(year, month, 1);
+                  const startingDayOfWeek = firstDay.getDay();
 
-                // Previous month's last day
-                const prevMonthLastDay = new Date(year, month, 0).getDate();
+                  // Last day of the month
+                  const lastDay = new Date(year, month + 1, 0);
+                  const daysInMonth = lastDay.getDate();
 
-                const days = [];
+                  // Previous month's last day
+                  const prevMonthLastDay = new Date(year, month, 0).getDate();
 
-                // Previous month padding (grayed out)
-                for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-                  const dayNum = prevMonthLastDay - i;
-                  days.push(
+                  const days = [];
+
+                  // Previous month padding (grayed out)
+                  for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+                    const dayNum = prevMonthLastDay - i;
+                    days.push(
+                      <div
+                        key={`prev-${dayNum}`}
+                        className="calendar-day calendar-day-other-month"
+                      >
+                        {dayNum}
+                      </div>
+                    );
+                  }
+
+                  // Current month days
+                  const today = new Date();
+                  for (let day = 1; day <= daysInMonth; day++) {
+                    const date = new Date(year, month, day);
+                    const isToday =
+                      date.toDateString() === today.toDateString();
+                    const isInCurrentWeek = currentWeek.some(
+                      (d) => d.toDateString() === date.toDateString()
+                    );
+
+                    days.push(
+                      <button
+                        key={`current-${day}`}
+                        className={`calendar-day ${
+                          isToday ? "calendar-day-today" : ""
+                        } ${isInCurrentWeek ? "active" : ""}`}
+                        onClick={() => setCurrentWeek(getWeekDates(date))}
+                      >
+                        {day}
+                      </button>
+                    );
+                  }
+
+                  // Next month padding (grayed out)
+                  const totalCells =
+                    Math.ceil((startingDayOfWeek + daysInMonth) / 7) * 7;
+                  const remainingCells = totalCells - days.length;
+                  for (let day = 1; day <= remainingCells; day++) {
+                    days.push(
+                      <div
+                        key={`next-${day}`}
+                        className="calendar-day calendar-day-other-month"
+                      >
+                        {day}
+                      </div>
+                    );
+                  }
+
+                  return days;
+                })()}
+              </div>
+            </div>
+            {/* Mass Types */}
+            <div className="mass-types-section">
+              <div className="mass-types-header">
+                <h3>Mass Types</h3>
+                <button
+                  className="btn-icon"
+                  onClick={() => setShowAddMassType(true)}
+                >
+                  +
+                </button>
+              </div>
+
+              <div className="mass-types-list">
+                {massTypes.map((type) => (
+                  <div key={type.mass_type_id} className="mass-type-item">
+                    <input type="checkbox" checked readOnly />
                     <div
-                      key={`prev-${dayNum}`}
-                      className="calendar-day calendar-day-other-month"
-                    >
-                      {dayNum}
-                    </div>
-                  );
-                }
-
-                // Current month days
-                const today = new Date();
-                for (let day = 1; day <= daysInMonth; day++) {
-                  const date = new Date(year, month, day);
-                  const isToday = date.toDateString() === today.toDateString();
-                  const isInCurrentWeek = currentWeek.some(
-                    (d) => d.toDateString() === date.toDateString()
-                  );
-
-                  days.push(
+                      className="mass-type-color"
+                      style={{ backgroundColor: type.color }}
+                      onClick={() => handleAddScheduleFromType(type)}
+                    />
+                    <span className="mass-type-name">{type.name}</span>
                     <button
-                      key={`current-${day}`}
-                      className={`calendar-day ${
-                        isToday ? "calendar-day-today" : ""
-                      } ${isInCurrentWeek ? "active" : ""}`}
-                      onClick={() => setCurrentWeek(getWeekDates(date))}
+                      className="mass-type-delete"
+                      onClick={() => handleDeleteMassType(type.mass_type_id)}
                     >
-                      {day}
+                      ×
                     </button>
-                  );
-                }
-
-                // Next month padding (grayed out)
-                const totalCells =
-                  Math.ceil((startingDayOfWeek + daysInMonth) / 7) * 7;
-                const remainingCells = totalCells - days.length;
-                for (let day = 1; day <= remainingCells; day++) {
-                  days.push(
-                    <div
-                      key={`next-${day}`}
-                      className="calendar-day calendar-day-other-month"
-                    >
-                      {day}
-                    </div>
-                  );
-                }
-
-                return days;
-              })()}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          {/* Mass Types */}
-          <div className="mass-types-section">
-            <div className="mass-types-header">
-              <h3>Mass Types</h3>
-              <button
-                className="btn-icon"
-                onClick={() => setShowAddMassType(true)}
-              >
-                +
-              </button>
-            </div>
-
-            <div className="mass-types-list">
-              {massTypes.map((type) => (
-                <div key={type.mass_type_id} className="mass-type-item">
-                  <input type="checkbox" checked readOnly />
-                  <div
-                    className="mass-type-color"
-                    style={{ backgroundColor: type.color }}
-                    onClick={() => handleAddScheduleFromType(type)}
-                  />
-                  <span className="mass-type-name">{type.name}</span>
-                  <button
-                    className="mass-type-delete"
-                    onClick={() => handleDeleteMassType(type.mass_type_id)}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
         </div>
 
         {/* Edit Schedule Modal */}

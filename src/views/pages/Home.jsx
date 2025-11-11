@@ -132,21 +132,36 @@ function Home() {
   };
 
   const navigateWeek = (direction) => {
-    if (direction === "next") setSelectedDate(selectedDate.add(7, "day"));
-    else setSelectedDate(selectedDate.subtract(7, "day"));
+    if (direction === "next") setSelectedDate(selectedDate.add(6, "day"));
+    else setSelectedDate(selectedDate.subtract(6, "day"));
   };
 
   const navigateMonth = (direction) => {
     setSelectedDate(selectedDate.add(direction === "next" ? 1 : -1, "month"));
   };
 
-  const handleTouchStart = (e) => setTouchStart(e.targetTouches[0].clientX);
-  const handleTouchMove = (e) => setTouchEnd(e.targetTouches[0].clientX);
-  const handleTouchEnd = () => {
-    if (touchStart - touchEnd > 75) setSelectedDate(selectedDate.add(1, "day"));
-    if (touchStart - touchEnd < -75)
-      setSelectedDate(selectedDate.subtract(1, "day"));
+  const isInteractiveTouch = (e) =>
+    !!e.target.closest && !!e.target.closest("button, a, input, select, textarea, .menu-button");
+
+  const handleTouchStart = (e) => {
+    if (isInteractiveTouch(e)) return;
+    setTouchStart(e.targetTouches[0].clientX);
+    setTouchEnd(e.targetTouches[0].clientX);
   };
+
+  const handleTouchMove = (e) => {
+    if (isInteractiveTouch(e)) return;
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const delta = touchStart - touchEnd;
+    if (delta > 75) setSelectedDate((d) => d.add(1, "day"))
+    if (delta < -75) setSelectedDate((d) => d.subtract(1, "day"));
+    setTouchStart(0);
+    setTouchEnd(0);
+};
 
   const formatTime = (timeStr) => {
     if (!timeStr) return "";
