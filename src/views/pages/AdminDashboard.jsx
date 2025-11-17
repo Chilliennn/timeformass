@@ -32,6 +32,7 @@ function AdminDashboard() {
   const [resizeDirection, setResizeDirection] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [draggedSchedule, setDraggedSchedule] = useState(null);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const saveTimeoutRef = useRef(null);
   const savedMessageTimeoutRef = useRef(null);
@@ -91,34 +92,45 @@ function AdminDashboard() {
 
   const getClientFromEvent = (e) => {
     if (!e) return { clientX: 0, clientY: 0 };
-    if (e.touches && e.touches[0]) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    if (e.touches && e.touches[0])
+      return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
     return { clientX: e.clientX, clientY: e.clientY };
-  };  
+  };
 
   const handlePointerDown = (e, schedule) => {
     if (resizingSchedule || placingMassType) return;
     const { clientX, clientY } = getClientFromEvent(e);
-    pointerDownRef.current = { x: clientX, y: clientY, schedule, time: Date.now() };
+    pointerDownRef.current = {
+      x: clientX,
+      y: clientY,
+      schedule,
+      time: Date.now(),
+    };
 
-    // mouse: only start pending drag if the user pressed the move-handle explicitly
     const isMouse = e.type === "mousedown";
-    const clickedHandle = e.target && e.target.closest && e.target.closest(".move-handle");
+    const clickedControl =
+      e.target &&
+      e.target.closest &&
+      e.target.closest(
+        "button, .schedule-resize-handle, .schedule-delete, .mass-type-color"
+      );
 
+    // Desktop (mouse): allow dragging from block except when pressing explicit controls (delete / resize)
     if (isMouse) {
-      pendingDragRef.current = !!clickedHandle;
-      if (pendingDragRef.current) {
-        // prevent text selection while dragging
-        e.preventDefault();
-      }
-    } else {
-      // touchstart: use long-press to initiate drag 
-      pendingDragRef.current = false;
-      if (e.type === "touchstart") {
-        touchLongPressTimer.current = setTimeout(() => {
-          pendingDragRef.current = false;
-          handleDragScheduleStart(e, schedule); // start drag after long press
-        }, 500); // 500ms long press
-      }
+      // don't start drag if user pressed a control
+      pendingDragRef.current = !clickedControl;
+      if (pendingDragRef.current) e.preventDefault(); // prevent text selection while dragging
+      return;
+    }
+
+    // Touch: use long-press to initiate drag; short swipe will scroll the container
+    pendingDragRef.current = false;
+    if (e.type === "touchstart") {
+      touchLongPressTimer.current = setTimeout(() => {
+        // begin drag after long press
+        pendingDragRef.current = false;
+        handleDragScheduleStart(e, schedule);
+      }, 500);
     }
   };
 
@@ -134,10 +146,10 @@ function AdminDashboard() {
       pendingDragRef.current = false;
       handleDragScheduleStart(e, schedule);
     }
-    // If already dragging, do nothing 
+    // If already dragging, do nothing
   };
 
-const handlePointerUp = (e, schedule) => {
+  const handlePointerUp = () => {
     // cancel potential longpress if any
     if (touchLongPressTimer.current) {
       clearTimeout(touchLongPressTimer.current);
@@ -146,20 +158,7 @@ const handlePointerUp = (e, schedule) => {
 
     // If we are currently dragging via drag state, end drag
     if (isDragging && draggedSchedule) {
-      // handleDragScheduleEnd will be called by window mouseup/touchend listener — but call here to be safe
       handleDragScheduleEnd();
-    } else {
-      // treat as click if pointerDownRef refers to same schedule and movement small
-      const pd = pointerDownRef.current;
-      if (pd && pd.schedule && pd.schedule.template_schedule_id === schedule.template_schedule_id) {
-        const { clientX, clientY } = getClientFromEvent(e);
-        const dx = clientX - pd.x;
-        const dy = clientY - pd.y;
-        if (Math.hypot(dx, dy) <= 6) {
-          // simple click: open editor
-          handleScheduleClick(e, schedule);
-        }
-      }
     }
 
     pointerDownRef.current = null;
@@ -346,21 +345,31 @@ const handlePointerUp = (e, schedule) => {
   const handleDragScheduleStart = (e, schedule) => {
     if (resizingSchedule || placingMassType) return;
 
-    const rect = e.currentTarget.getBoundingClientRect();
+    const client = getClientFromEvent(e);
+    const el =
+      e?.currentTarget ||
+      document.querySelector(
+        `.schedule-block[data-id="${schedule.template_schedule_id}"]`
+      );
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
     setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: client.clientX - rect.left,
+      y: client.clientY - rect.top,
     });
     setDraggedSchedule(schedule);
     setIsDragging(true);
-    e.currentTarget.style.opacity = "0.5";
+    el.style.opacity = "0.5";
   };
 
   const handleDragScheduleMove = useCallback(
     (e) => {
       if (!isDragging || !draggedSchedule) return;
 
-      // Find the day column under cursor
+      const client = getClientFromEvent(e);
+
+      // Find the day column under cursor using client coordinates
       const columns = document.querySelectorAll(".day-column-body");
       let targetColumn = null;
       let targetDayIndex = -1;
@@ -368,10 +377,10 @@ const handlePointerUp = (e, schedule) => {
       for (let i = 0; i < columns.length; i++) {
         const rect = columns[i].getBoundingClientRect();
         if (
-          e.clientX >= rect.left &&
-          e.clientX <= rect.right &&
-          e.clientY >= rect.top &&
-          e.clientY <= rect.bottom
+          client.clientX >= rect.left &&
+          client.clientX <= rect.right &&
+          client.clientY >= rect.top &&
+          client.clientY <= rect.bottom
         ) {
           targetColumn = columns[i];
           targetDayIndex = i;
@@ -382,7 +391,7 @@ const handlePointerUp = (e, schedule) => {
       if (targetColumn && targetDayIndex >= 0) {
         const rect = targetColumn.getBoundingClientRect();
         const minuteHeight = rect.height / TOTAL_DAY_MINUTES;
-        const relativeY = e.clientY - rect.top - dragOffset.y;
+        const relativeY = client.clientY - rect.top - dragOffset.y;
         const rawMinutes = relativeY / minuteHeight;
         const snappedMinutes =
           Math.round(rawMinutes / MINUTE_STEP) * MINUTE_STEP;
@@ -420,6 +429,12 @@ const handlePointerUp = (e, schedule) => {
 
   const handleDragScheduleEnd = useCallback(async () => {
     if (!draggedSchedule) return;
+
+    // restore opacity of element if it exists
+    const el = document.querySelector(
+      `.schedule-block[data-id="${draggedSchedule.template_schedule_id}"]`
+    );
+    if (el) el.style.opacity = "1";
 
     const updatedSchedule = schedules.find(
       (s) => s.template_schedule_id === draggedSchedule.template_schedule_id
@@ -626,16 +641,16 @@ const handlePointerUp = (e, schedule) => {
     }
   }, [resizingSchedule, handleResizeMove, handleResizeEnd]);
 
-  const handleScheduleClick = (e, schedule) => {
-    if (placingMassType || resizingSchedule) return;
+  // const handleScheduleClick = (e, schedule) => {
+  //   if (placingMassType || resizingSchedule) return;
 
-    e.stopPropagation();
-    setEditingSchedule(schedule);
-    setEditStartTime(schedule.start_time.substring(0, 5));
-    setEditEndTime(schedule.end_time.substring(0, 5));
-    setEditLanguage(schedule.language || "");
-    setEditNotes(schedule.notes || "");
-  };
+  //   e.stopPropagation();
+  //   setEditingSchedule(schedule);
+  //   setEditStartTime(schedule.start_time.substring(0, 5));
+  //   setEditEndTime(schedule.end_time.substring(0, 5));
+  //   setEditLanguage(schedule.language || "");
+  //   setEditNotes(schedule.notes || "");
+  // };
 
   const handleSaveScheduleEdit = async () => {
     if (!editingSchedule) return;
@@ -742,73 +757,96 @@ const handlePointerUp = (e, schedule) => {
     return (
       <div
         key={schedule.template_schedule_id}
+        data-id={schedule.template_schedule_id}
         className="schedule-block"
         style={{
           top: `${minutesToPixels(startMinutes)}px`,
           height: `${Math.max(28, heightPx - 3)}px`,
-          backgroundColor: schedule.mass_types?.color || '#2C3E91',
-          cursor: isDragging ? 'grabbing' : 'grab'
+          backgroundColor: schedule.mass_types?.color || "#2C3E91",
+          cursor: isDragging ? "grabbing" : "grab",
         }}
-        /* pointer / mouse */
         onMouseDown={(e) => handlePointerDown(e, schedule)}
         onMouseMove={(e) => handlePointerMove(e, schedule)}
         onMouseUp={(e) => handlePointerUp(e, schedule)}
-        /* touch for mobile */
         onTouchStart={(e) => handlePointerDown(e, schedule)}
         onTouchMove={(e) => {
-          // if longpress already started drag, prevent default to allow dragging
           if (isDragging) e.preventDefault();
           handlePointerMove(e, schedule);
         }}
         onTouchEnd={(e) => handlePointerUp(e, schedule)}
-        /* avoid accidental onClick while dragging: only call click if not dragging */
-        onClick={(e) => { if (!isDragging) handleScheduleClick(e, schedule); }}
       >
-        {/* small visible handle to indicate draggable area for mouse users */}
-        <div
-          className="move-handle"
-          title="Drag to move"
-          onMouseDown={() => {
-            // ensure clicking the handle begins pointer flow on desktop
-            // do not stop propagation — handlePointerDown reads the target
-          }}
-          onTouchStart={() => {
-            // touch: allow long-press to start move; don't block scrolling here
-          }}
-        >
-          ☰
-        </div>
+        {/* resize handle top */}
         <div
           className="schedule-resize-handle schedule-resize-top"
-          onMouseDown={(e) => handleResizeStart(e, schedule, 'top')}
-          onTouchStart={(e) => { e.stopPropagation(); handleResizeStart(e, schedule, 'top'); }}
+          onMouseDown={(e) => handleResizeStart(e, schedule, "top")}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            handleResizeStart(e, schedule, "top");
+          }}
         />
+
         <div className="schedule-block-content">
           <div className="schedule-block-header">
-            <span className={`schedule-block-title ${isVerySmall ? 'compact' : ''}`}>
+            <span
+              className={`schedule-block-title ${isVerySmall ? "compact" : ""}`}
+            >
               {schedule.mass_types?.name}
             </span>
-            <button
-              className="schedule-delete"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteSchedule(schedule.template_schedule_id);
-              }}
+
+            {/* actions container: delete on top, edit below */}
+            <div
+              className="schedule-actions"
+              onClick={(e) => e.stopPropagation()}
             >
-              🗑️
-            </button>
+              <button
+                className="schedule-delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteSchedule(schedule.template_schedule_id);
+                }}
+                aria-label="Delete schedule"
+                title="Delete"
+              >
+                🗑️
+              </button>
+
+              <button
+                className="schedule-edit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingSchedule(schedule);
+                  setEditStartTime(schedule.start_time.substring(0, 5));
+                  setEditEndTime(schedule.end_time.substring(0, 5));
+                  setEditLanguage(schedule.language || "");
+                  setEditNotes(schedule.notes || "");
+                }}
+                aria-label="Edit schedule"
+                title="Edit"
+              >
+                ✏️
+              </button>
+            </div>
           </div>
-          <div className={`schedule-block-time ${isVerySmall ? 'compact' : ''}`}>
+
+          <div
+            className={`schedule-block-time ${isVerySmall ? "compact" : ""}`}
+          >
             <span className="time-icon">🕐</span>
             <span className="time-text">
-              {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)}
+              {schedule.start_time.substring(0, 5)} -{" "}
+              {schedule.end_time.substring(0, 5)}
             </span>
           </div>
         </div>
+
+        {/* resize handle bottom */}
         <div
           className="schedule-resize-handle schedule-resize-bottom"
-          onMouseDown={(e) => handleResizeStart(e, schedule, 'bottom')}
-          onTouchStart={(e) => { e.stopPropagation(); handleResizeStart(e, schedule, 'bottom'); }}
+          onMouseDown={(e) => handleResizeStart(e, schedule, "bottom")}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            handleResizeStart(e, schedule, "bottom");
+          }}
         />
       </div>
     );
@@ -833,15 +871,47 @@ const handlePointerUp = (e, schedule) => {
         </div>
 
         <div className="admin-header-right">
-          <button className="view-landing-button" onClick={() => navigate("/")}>
-            View Mass Schedules
-          </button>
-          <div className="admin-profile">
-            <div className="admin-info">
-              <div className="admin-name">{admin.name}</div>
-              <div className="admin-parish">{parish.name}</div>
+          <div className="admin-profile-wrapper">
+            <div
+              className="admin-profile"
+              onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+            >
+              <div className="admin-info">
+                <div className="admin-name">{admin.name}</div>
+                <div className="admin-parish">{parish.name}</div>
+              </div>
+              <button
+                className="admin-dropdown-toggle"
+                aria-label="Toggle menu"
+              >
+                {showProfileDropdown ? "▲" : "▼"}
+              </button>
             </div>
-            <button className="admin-dropdown-toggle">▼</button>
+
+            {/* dropdown menu */}
+            <div
+              className={`profile-dropdown ${
+                showProfileDropdown ? "show" : ""
+              }`}
+            >
+              <button
+                className="dropdown-item"
+                onClick={() => {
+                  navigate("/");
+                  setShowProfileDropdown(false);
+                }}
+              >
+                View Mass Schedules
+              </button>
+              <button
+                className="dropdown-item"
+                onClick={() => {
+                  setShowProfileDropdown(false); /* add logout logic here */
+                }}
+              >
+                Logout
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -947,23 +1017,27 @@ const handlePointerUp = (e, schedule) => {
 
             {/* Grid */}
             <div className="schedule-grid">
-              <div className="schedule-grid-header">
-                <div className="time-axis-header">Week</div>
-                {currentWeek.map((date, i) => (
-                  <div key={i} className="day-header">
-                    <div className="day-number">{date.getDate()}</div>
-                    <div className="day-name">
-                      {
-                        ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
-                          date.getDay()
-                        ]
-                      }
+              <div
+                className={`schedule-grid-scrollable ${
+                  isDragging ? "dragging" : ""
+                }`}
+              >
+                <div className="schedule-grid-header">
+                  <div className="time-axis-header">Week</div>
+                  {currentWeek.map((date, i) => (
+                    <div key={i} className="day-header">
+                      <div className="day-number">{date.getDate()}</div>
+                      <div className="day-name">
+                        {
+                          ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+                            date.getDay()
+                          ]
+                        }
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
 
-              <div className="schedule-grid-scrollable">
                 <div className="schedule-grid-content">
                   <div className="time-axis">
                     {hoursLabels.map((hour) => (
