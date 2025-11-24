@@ -18,6 +18,7 @@ function AdminDashboard() {
   const [newMassTypeName, setNewMassTypeName] = useState("");
   const [newMassTypeColor, setNewMassTypeColor] = useState("#2C3E91");
   const [newTemplateName, setNewTemplateName] = useState("");
+  const [activeScheduleId, setActiveScheduleId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [showSavedMessage, setShowSavedMessage] = useState(false);
   const [placingMassType, setPlacingMassType] = useState(null);
@@ -90,49 +91,32 @@ function AdminDashboard() {
     });
   }
 
-  const getClientFromEvent = (e) => {
-    if (!e) return { clientX: 0, clientY: 0 };
-    if (e.touches && e.touches[0])
-      return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
-    return { clientX: e.clientX, clientY: e.clientY };
-  };
+const getClientFromEvent = (e) => {
+  if (!e) return { clientX: 0, clientY: 0 };
+  if (e.touches && e.touches[0]) return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+  return { clientX: e.clientX, clientY: e.clientY };
+};
 
-  const handlePointerDown = (e, schedule) => {
-    if (resizingSchedule || placingMassType) return;
-    const { clientX, clientY } = getClientFromEvent(e);
-    pointerDownRef.current = {
-      x: clientX,
-      y: clientY,
-      schedule,
-      time: Date.now(),
-    };
+const handlePointerDown = (e, schedule) => {
+  const { clientX, clientY } = getClientFromEvent(e);
+  pointerDownRef.current = { x: clientX, y: clientY, time: Date.now(), scheduleId: schedule.template_schedule_id };
 
-    const isMouse = e.type === "mousedown";
-    const clickedControl =
-      e.target &&
-      e.target.closest &&
-      e.target.closest(
-        "button, .schedule-resize-handle, .schedule-delete, .mass-type-color"
-      );
+  const clickedControl = e.target && e.target.closest && e.target.closest('button, .schedule-resize-handle, .schedule-delete, .schedule-edit');
+  pointerDownRef.current.clickedControl = !!clickedControl;
 
-    // Desktop (mouse): allow dragging from block except when pressing explicit controls (delete / resize)
-    if (isMouse) {
-      // don't start drag if user pressed a control
-      pendingDragRef.current = !clickedControl;
-      if (pendingDragRef.current) e.preventDefault(); // prevent text selection while dragging
-      return;
+  // For touch: start long press timer for dragging.
+  if (e.type === "touchstart") {
+    if (touchLongPressTimer.current) clearTimeout(touchLongPressTimer.current);
+    touchLongPressTimer.current = setTimeout(() => {
+      handleDragScheduleStart(e, schedule);
+    }, 500);
+  } else {
+    // For mouse: set pendingDragRef to true if not clicking a control.
+    if (!clickedControl) {
+      pendingDragRef.current = true;
     }
-
-    // Touch: use long-press to initiate drag; short swipe will scroll the container
-    pendingDragRef.current = false;
-    if (e.type === "touchstart") {
-      touchLongPressTimer.current = setTimeout(() => {
-        // begin drag after long press
-        pendingDragRef.current = false;
-        handleDragScheduleStart(e, schedule);
-      }, 500);
-    }
-  };
+  }
+};
 
   const handlePointerMove = (e, schedule) => {
     if (!pointerDownRef.current) return;
@@ -143,27 +127,48 @@ function AdminDashboard() {
 
     // if mouse moved enough, begin drag
     if (pendingDragRef.current && dist > 6 && e.type.indexOf("mouse") !== -1) {
+      setActiveScheduleId(null);
       pendingDragRef.current = false;
       handleDragScheduleStart(e, schedule);
     }
     // If already dragging, do nothing
   };
 
-  const handlePointerUp = () => {
-    // cancel potential longpress if any
-    if (touchLongPressTimer.current) {
-      clearTimeout(touchLongPressTimer.current);
-      touchLongPressTimer.current = null;
-    }
+  const handlePointerUp = (e, schedule) => {
+  // Clear any long-press timer
+  if (touchLongPressTimer.current) {
+    clearTimeout(touchLongPressTimer.current);
+    touchLongPressTimer.current = null;
+  }
 
-    // If we are currently dragging via drag state, end drag
-    if (isDragging && draggedSchedule) {
-      handleDragScheduleEnd();
-    }
-
+  // If dragging is ongoing, finish drag
+  if (isDragging && draggedSchedule) {
+    handleDragScheduleEnd();
     pointerDownRef.current = null;
     pendingDragRef.current = false;
-  };
+    return;
+  }
+
+  // If user clicked a control (delete/edit), don't toggle icons
+  const pd = pointerDownRef.current;
+  if (!pd) return;
+
+  const { clientX, clientY } = getClientFromEvent(e);
+  const dx = Math.abs(pd.x - clientX);
+  const dy = Math.abs(pd.y - clientY);
+  const movedSmall = dx <= 6 && dy <= 6;
+  const elapsedShort = Date.now() - pd.time < 500;
+
+  // Toggle icons only when it's a short tap/click and not a control press
+  if (movedSmall && elapsedShort && !pd.clickedControl) {
+    setActiveScheduleId((prev) =>
+      prev === schedule.template_schedule_id ? null : schedule.template_schedule_id
+    );
+  }
+
+  pointerDownRef.current = null;
+  pendingDragRef.current = false;
+};
 
   // Load admin data
   useEffect(() => {
@@ -227,6 +232,22 @@ function AdminDashboard() {
 
     loadAdminData();
   }, [navigate]);
+
+  useEffect(() => {
+    const handleDocClick = (e) => {
+      if (!e.target.closest || !e.target.closest(".schedule-block")) {
+        setActiveScheduleId(null);
+      }
+    };
+    const handleEsc = (e) => { if (e.key === "Escape") setActiveScheduleId(null); };
+
+    document.addEventListener("click", handleDocClick);
+    document.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("click", handleDocClick);
+      document.removeEventListener("keydown", handleEsc);
+    };
+  }, []);
 
   // Load schedules for selected template
   useEffect(() => {
@@ -753,12 +774,13 @@ function AdminDashboard() {
     const durationMinutes = Math.max(MINUTE_STEP, endMinutes - startMinutes);
     const heightPx = minutesToPixels(durationMinutes);
     const isVerySmall = heightPx < 35;
+    const isActive = activeScheduleId === schedule.template_schedule_id;
 
     return (
       <div
         key={schedule.template_schedule_id}
         data-id={schedule.template_schedule_id}
-        className="schedule-block"
+        className={`schedule-block ${isActive ? "active" : ""}`} 
         style={{
           top: `${minutesToPixels(startMinutes)}px`,
           height: `${Math.max(28, heightPx - 3)}px`,
@@ -803,6 +825,7 @@ function AdminDashboard() {
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDeleteSchedule(schedule.template_schedule_id);
+                  setActiveScheduleId(null);
                 }}
                 aria-label="Delete schedule"
                 title="Delete"
@@ -819,6 +842,7 @@ function AdminDashboard() {
                   setEditEndTime(schedule.end_time.substring(0, 5));
                   setEditLanguage(schedule.language || "");
                   setEditNotes(schedule.notes || "");
+                  setActiveScheduleId(null);
                 }}
                 aria-label="Edit schedule"
                 title="Edit"
@@ -1300,7 +1324,10 @@ function AdminDashboard() {
                 </button>
                 <button
                   className="btn-primary"
-                  onClick={handleSaveScheduleEdit}
+                  onClick={() => {
+                    handleSaveScheduleEdit();
+                    setActiveScheduleId(null);
+                  }}
                 >
                   Save Changes
                 </button>

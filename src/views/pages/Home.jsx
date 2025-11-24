@@ -132,8 +132,8 @@ function Home() {
   };
 
   const navigateWeek = (direction) => {
-    if (direction === "next") setSelectedDate(selectedDate.add(6, "day"));
-    else setSelectedDate(selectedDate.subtract(6, "day"));
+    if (direction === "next") setSelectedDate(selectedDate.add(7, "day"));
+    else setSelectedDate(selectedDate.subtract(7, "day"));
   };
 
   const navigateMonth = (direction) => {
