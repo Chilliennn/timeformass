@@ -775,6 +775,8 @@ const handlePointerDown = (e, schedule) => {
     const heightPx = minutesToPixels(durationMinutes);
     const isVerySmall = heightPx < 35;
     const isActive = activeScheduleId === schedule.template_schedule_id;
+    const massTypeName = schedule.mass_types?.name || "";
+    const shortName = massTypeName.substring(0, 3).toUpperCase();
 
     return (
       <div
@@ -792,7 +794,7 @@ const handlePointerDown = (e, schedule) => {
         onMouseUp={(e) => handlePointerUp(e, schedule)}
         onTouchStart={(e) => handlePointerDown(e, schedule)}
         onTouchMove={(e) => {
-          if (isDragging) e.preventDefault();
+          // if (isDragging) e.preventDefault();
           handlePointerMove(e, schedule);
         }}
         onTouchEnd={(e) => handlePointerUp(e, schedule)}
@@ -812,7 +814,8 @@ const handlePointerDown = (e, schedule) => {
             <span
               className={`schedule-block-title ${isVerySmall ? "compact" : ""}`}
             >
-              {schedule.mass_types?.name}
+              <span className="mass-title-full">{massTypeName}</span>
+              <span className="mass-title-short">{shortName}</span>
             </span>
 
             {/* actions container: delete on top, edit below */}

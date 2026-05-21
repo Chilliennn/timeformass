@@ -194,7 +194,7 @@
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
   min-width: 0;
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .schedule-grid-container,
@@ -206,7 +206,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--sidebar-max);
   gap: 1.25rem;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .week-navigation {
@@ -237,7 +237,7 @@
   flex-direction: column;
   gap: 0.75rem;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .grid-header {
@@ -338,6 +338,7 @@
   align-items: center;
   gap: 0.2rem;
   min-height: 16px;
+  position: relative;
 }
 
 .schedule-block-content {
@@ -357,6 +358,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mass-title-full {
+  display: inline;
+}
+
+.mass-title-short {
+  display: none;
+  font-weight: 700;
+  letter-spacing: 0.05em;
 }
 
 .schedule-block-title.compact {
@@ -658,6 +669,11 @@
     max-height: 60vh;
     min-height: 300px;
   }
+
+  .schedule-calendar-wrapper {
+    overflow-x: auto;
+    overflow-y: auto;
+  }
 }
 
 @media (max-width: 480px) {
@@ -716,6 +732,48 @@
 
   .schedule-block-time {
     font-size: 0.5rem;
+  }
+
+  .mass-title-full {
+    display: none;
+  }
+
+  .mass-title-short {
+    display: inline;
+  }
+
+  .schedule-grid-container {
+    overflow: visible;
+    padding: 0.75rem 0.5rem;
+  }
+
+  .schedule-grid,
+  .schedule-calendar-wrapper {
+    overflow: visible;
+  }
+
+  .schedule-grid-scrollable {
+    max-height: none;
+    overflow-y: auto !important;
+    
+  }
+
+  .schedule-actions {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .schedule-actions button {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+  }
+
+  .schedule-block-header {
+    padding-right: 24px;
   }
 
   .calendar-widget,
@@ -846,13 +904,21 @@
     width: 100%;
     justify-content: space-between;
   }
+
+  .mass-title-full {
+    display: none;
+  }
+
+  .mass-title-short {
+    display: inline;
+  }
 }
 
 @media (max-width: 360px) {
   :root {
     --day-min: 70px; /* tighter for 320px */
     --time-column: 34px;
-    --schedule-icon-size: clamp(14px, 4vw, 20px);
+    --schedule-icon-size: clamp(14px, 4vw, 18px);
   }
 
   .schedule-grid-content,
@@ -862,7 +928,7 @@
   }
 
   .schedule-grid-scrollable {
-    max-height: calc(100vh - 180px);
+    max-height: none;
   }
 
   .schedule-block-title { font-size: clamp(0.56rem, 1.8vw, 0.7rem); }

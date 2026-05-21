@@ -29,7 +29,7 @@ function Login() {
       return;
     }
 
-    // 2) fetch admin metadata by email (or by auth_uid if you prefer)
+    // 2) fetch admin metadata by email
     const { data: adminRow, error: adminErr } = await supabase
       .from('admin')
       .select('admin_id, parish_id, name, email, auth_uid')
