@@ -89,6 +89,18 @@ export const templateRepository = {
     return data;
   },
 
+  async approveAllStagedDrafts(templateId) {
+    const { data, error } = await supabase
+      .from('template_schedules')
+      .update({ is_scraped_draft: false })
+      .eq('template_id', templateId)
+      .eq('is_scraped_draft', true)
+      .select();
+
+    if (error) throw error;
+    return data;
+  },
+
   async insertSchedule(schedule) {
     const { data, error } = await supabase
       .from('template_schedules')

@@ -13,6 +13,10 @@ export const scheduleCoordinator = {
     return await parishRepository.findAll();
   },
 
+  verifySuperAdminAccess(adminId) {
+    return parseInt(adminId, 10) === 1;
+  },
+
   // Get parish details with all schedules
   async getParishDetails(parishId) {
     const parish = await parishRepository.findById(parishId);
