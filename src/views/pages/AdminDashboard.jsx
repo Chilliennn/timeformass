@@ -11,6 +11,7 @@ function AdminDashboard() {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [schedules, setSchedules] = useState([]);
+  const [draftSchedules, setDraftSchedules] = useState([]);
   const [massTypes, setMassTypes] = useState([]);
   const [scrapingTarget, setScrapingTarget] = useState(null);
   const [currentWeek, setCurrentWeek] = useState(getWeekDates(new Date()));
@@ -26,6 +27,7 @@ function AdminDashboard() {
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [editTemplateName, setEditTemplateName] = useState("");
   const [editingSchedule, setEditingSchedule] = useState(null);
+  const [viewSchedule, setViewSchedule] = useState(null);
   const [editStartTime, setEditStartTime] = useState("");
   const [editEndTime, setEditEndTime] = useState("");
   const [editLanguage, setEditLanguage] = useState("");
@@ -262,9 +264,7 @@ const handlePointerDown = (e, schedule) => {
       }
       alert(`Synchronization finished: ${result.message}`);
 
-      // Automatically trigger a refresh of the template schedules layout view
-      const scheduleData = await templateRepository.getTemplateSchedules(selectedTemplate.template_id);
-      setSchedules(scheduleData);
+      await refreshTemplateSchedules(selectedTemplate.template_id);
     } catch (err) {
       console.error("Scraper execution fail:", err);
       alert(`Scraper execution failed:\n${err.message}`);
@@ -273,19 +273,28 @@ const handlePointerDown = (e, schedule) => {
     }
   };
 
+  const refreshTemplateSchedules = useCallback(async (templateId) => {
+    if (!templateId) return;
+
+    const [scheduleData, draftData] = await Promise.all([
+      templateRepository.getTemplateSchedules(templateId),
+      templateRepository.getStagedDraftSchedules(templateId),
+    ]);
+
+    setSchedules(scheduleData || []);
+    setDraftSchedules(draftData || []);
+  }, []);
+
   // Load schedules for selected template
   useEffect(() => {
     async function loadSchedules() {
       if (!selectedTemplate) return;
 
-      const scheduleData = await templateRepository.getTemplateSchedules(
-        selectedTemplate.template_id
-      );
-      setSchedules(scheduleData);
+      await refreshTemplateSchedules(selectedTemplate.template_id);
     }
 
     loadSchedules();
-  }, [selectedTemplate]);
+  }, [selectedTemplate, refreshTemplateSchedules]);
 
   const autoSave = useCallback(async () => {
     if (saveTimeoutRef.current) {
@@ -380,6 +389,62 @@ const handlePointerDown = (e, schedule) => {
       autoSave(updatedSchedules);
     } catch (error) {
       console.error("Failed to delete schedule:", error);
+    }
+  };
+
+  const handleApproveDraft = async (draftSchedule) => {
+    if (!selectedTemplate || !draftSchedule) return;
+
+    try {
+      await templateRepository.updateSchedule(draftSchedule.template_schedule_id, {
+        is_scraped_draft: false,
+      });
+      await refreshTemplateSchedules(selectedTemplate.template_id);
+      setShowSavedMessage(true);
+      if (savedMessageTimeoutRef.current) {
+        clearTimeout(savedMessageTimeoutRef.current);
+      }
+      savedMessageTimeoutRef.current = setTimeout(() => {
+        setShowSavedMessage(false);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to approve draft schedule:", error);
+    }
+  };
+
+  const handleRejectDraft = async (draftSchedule) => {
+    if (!selectedTemplate || !draftSchedule) return;
+
+    try {
+      await templateRepository.deleteSchedule(draftSchedule.template_schedule_id);
+      await refreshTemplateSchedules(selectedTemplate.template_id);
+      setShowSavedMessage(true);
+      if (savedMessageTimeoutRef.current) {
+        clearTimeout(savedMessageTimeoutRef.current);
+      }
+      savedMessageTimeoutRef.current = setTimeout(() => {
+        setShowSavedMessage(false);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to reject draft schedule:", error);
+    }
+  };
+
+  const handleApproveAllDrafts = async () => {
+    if (!selectedTemplate) return;
+
+    try {
+      await templateRepository.approveAllStagedDrafts(selectedTemplate.template_id);
+      await refreshTemplateSchedules(selectedTemplate.template_id);
+      setShowSavedMessage(true);
+      if (savedMessageTimeoutRef.current) {
+        clearTimeout(savedMessageTimeoutRef.current);
+      }
+      savedMessageTimeoutRef.current = setTimeout(() => {
+        setShowSavedMessage(false);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to approve all staged drafts:", error);
     }
   };
 
@@ -843,6 +908,17 @@ const handlePointerDown = (e, schedule) => {
               onClick={(e) => e.stopPropagation()}
             >
               <button
+                className="schedule-view"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setViewSchedule(schedule);
+                }}
+                aria-label="View schedule"
+                title="View"
+              >
+                👁️
+              </button>
+              <button
                 className="schedule-delete"
                 onClick={(e) => {
                   e.stopPropagation();
@@ -894,6 +970,104 @@ const handlePointerDown = (e, schedule) => {
             handleResizeStart(e, schedule, "bottom");
           }}
         />
+      </div>
+    );
+  };
+
+  const renderDraftBlock = (schedule) => {
+    const startMinutes = timeStringToMinutesFromStart(schedule.start_time);
+    const endMinutes = timeStringToMinutesFromStart(schedule.end_time);
+    const durationMinutes = Math.max(MINUTE_STEP, endMinutes - startMinutes);
+    const heightPx = minutesToPixels(durationMinutes);
+    const massTypeName = schedule.mass_types?.name || "Scraped Draft";
+    const shortName = massTypeName.substring(0, 3).toUpperCase();
+
+    return (
+      <div
+        key={`draft-${schedule.template_schedule_id}`}
+        data-id={`draft-${schedule.template_schedule_id}`}
+        className="schedule-block draft-schedule-block"
+        style={{
+          top: `${minutesToPixels(startMinutes)}px`,
+          height: `${Math.max(30, heightPx - 1)}px`,
+          backgroundColor: "rgba(107, 163, 232, 0.14)",
+          border: "2px dashed rgba(44, 62, 145, 0.55)",
+          boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.6)",
+          color: "#2c3e91",
+          cursor: "default",
+          zIndex: 5,
+          marginLeft: "4px",
+          width: "calc(100% - 8px)",
+        }}
+      >
+        <div className="schedule-block-content" style={{ padding: "0.45rem 0.5rem" }}>
+          <div className="schedule-block-header" style={{ alignItems: "flex-start" }}>
+            <span className="schedule-block-title" style={{ fontSize: "0.78rem" }}>
+              <span className="mass-title-full">{massTypeName}</span>
+              <span className="mass-title-short">{shortName}</span>
+            </span>
+            <span
+              style={{
+                fontSize: "0.65rem",
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                backgroundColor: "rgba(44, 62, 145, 0.1)",
+                borderRadius: "999px",
+                padding: "0.15rem 0.45rem",
+              }}
+            >
+              Draft
+            </span>
+          </div>
+
+          <div className="schedule-block-time" style={{ marginTop: "0.25rem" }}>
+            <span className="time-icon">🕐</span>
+            <span className="time-text">
+              {schedule.start_time.substring(0, 5)} - {schedule.end_time.substring(0, 5)}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "0.35rem",
+              marginTop: "0.45rem",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              className="btn-secondary"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.7rem" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                setViewSchedule(schedule);
+              }}
+            >
+              View
+            </button>
+            <button
+              className="btn-primary"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.7rem" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleApproveDraft(schedule);
+              }}
+            >
+              Approve
+            </button>
+            <button
+              className="btn-cancel"
+              style={{ padding: "0.25rem 0.45rem", fontSize: "0.7rem" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRejectDraft(schedule);
+              }}
+            >
+              Reject
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -1098,6 +1272,9 @@ const handlePointerDown = (e, schedule) => {
                     const daySchedules = schedules.filter(
                       (s) => s.day_of_week === dbDay
                     );
+                    const dayDraftSchedules = draftSchedules.filter(
+                      (s) => s.day_of_week === dbDay
+                    );
 
                     return (
                       <div key={dayIndex} className="day-column">
@@ -1121,6 +1298,7 @@ const handlePointerDown = (e, schedule) => {
                           ))}
 
                           {daySchedules.map(renderScheduleBlock)}
+                          {dayDraftSchedules.map(renderDraftBlock)}
                         </div>
                       </div>
                     );
@@ -1263,6 +1441,30 @@ const handlePointerDown = (e, schedule) => {
                   >
                     {scrapingTarget === 'st_ignatius_btn' ? '⏳ Syncing St. Ignatius...' : 'Sync St. Ignatius Church'}
                   </button>
+                </div>
+                <div style={{ marginTop: '0.9rem', paddingTop: '0.8rem', borderTop: '1px solid rgba(44, 62, 145, 0.12)' }}>
+                  <div className="mass-types-header" style={{ marginBottom: '0.45rem' }}>
+                    <h3 style={{ color: '#2c3e91', fontSize: '0.95rem' }}>Review Staged Drafts</h3>
+                  </div>
+
+                  {draftSchedules.length > 0 ? (
+                    <>
+                      <div style={{ marginBottom: '0.65rem', fontSize: '0.8rem', color: '#666' }}>
+                        {draftSchedules.length} draft{draftSchedules.length === 1 ? '' : 's'} waiting review.
+                      </div>
+                      <button
+                        className="btn-add-template"
+                        style={{ backgroundColor: '#2c3e91', width: '100%', margin: 0 }}
+                        onClick={handleApproveAllDrafts}
+                      >
+                        ✓ Approve All Staged Drafts
+                      </button>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: '0.8rem', color: '#777', lineHeight: '1.4' }}>
+                      No staged drafts waiting review.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1443,6 +1645,68 @@ const handlePointerDown = (e, schedule) => {
               </button>
               <button className="btn-primary" onClick={handleAddMassType}>
                 Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* View Schedule Modal (read-only) */}
+      {viewSchedule && (
+        <div
+          className="modal-overlay"
+          onClick={() => setViewSchedule(null)}
+        >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>
+              View Schedule {viewSchedule.is_scraped_draft ? "· Draft" : ""}
+            </h3>
+
+            <div className="form-group">
+              <label className="form-label">Mass Type</label>
+              <div className="form-value">
+                {viewSchedule.mass_types?.name || "(unspecified)"}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Start Time</label>
+              <div className="form-value">
+                {viewSchedule.start_time?.substring(0, 5) || ""}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">End Time</label>
+              <div className="form-value">
+                {viewSchedule.end_time?.substring(0, 5) || ""}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Language</label>
+              <div className="form-value">{viewSchedule.language || ""}</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Notes</label>
+              <div className="form-value" style={{ whiteSpace: "pre-wrap" }}>
+                {viewSchedule.notes || ""}
+              </div>
+            </div>
+
+            {viewSchedule.bulletin_file_name && (
+              <div className="form-group">
+                <label className="form-label">Bulletin</label>
+                <div className="form-value">{viewSchedule.bulletin_file_name}</div>
+              </div>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn-cancel"
+                onClick={() => setViewSchedule(null)}
+              >
+                Close
               </button>
             </div>
           </div>
