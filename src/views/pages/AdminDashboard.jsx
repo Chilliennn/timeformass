@@ -291,7 +291,7 @@ const handlePointerDown = (e, schedule) => {
 
     loadSchedules();
   }, [selectedTemplate]);
-  
+
   const autoSave = useCallback(async () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -1256,16 +1256,16 @@ const handlePointerDown = (e, schedule) => {
                   <h3 style={{ color: '#2c3e91' }}>⚡ Target Site Synchronizations</h3>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: '#666666', margin: '0.5rem 0 1rem 0', lineHeight: '1.4' }}>
-                  Trigger independent web crawling background scripts to collect mass schedule listings directly into the staging engine dataset.
+                  Trigger independent web scripts to collect mass schedule listings.
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                   <button 
                     className="btn-add-template" 
                     style={{ backgroundColor: '#2c3e91', width: '100%', margin: 0 }}
                     disabled={scrapingTarget !== null}
-                    onClick={() => handleTriggerScraper('st_michael_btn')}
+                    onClick={() => handleTriggerScraper('holy_rosary_btn')}
                   >
-                    {scrapingTarget === 'st_michael_btn' ? '⏳ Syncing St. Michael...' : 'Sync St. Michael Church'}
+                    {scrapingTarget === 'holy_rosary_btn' ? '⏳ Syncing Holy Rosary...' : 'Sync Holy Rosary Church'}
                   </button>
                   <button 
                     className="btn-add-template" 
