@@ -1,0 +1,77 @@
+# Agent Context & Guardrails - TimeForMass Ingestion Engine
+
+You are an expert AI software engineer assisting with the "TimeForMass" schedule-management system. This repository uses a React.js SPA, Node.js runtime environment, and a Supabase backend.
+
+## SYSTEM GUARDRAILS (DO NOT VIOLATE)
+1. **NO "AI Comments":** Do not write or leave placeholder comments like `// Code from your existing component...`, `// Rest of the code remains unchanged...`, or `/* TODO: add logic here */`. When updating file modules, output the COMPLETE code or explicitly specify precise contextual inserts.
+2. **Do Not Overwrite Existing Logic:** The admin manual calendar grid workspace is highly integrated with coordinate drag-and-drop and resize hooks. Do not modify or refactor the core scheduling canvas layout or pointer-events handlers (`handlePointerDown`, `handleDragScheduleStart`, etc.) unless explicitly instructed.
+3. **Separation of Scraper States:** Under no circumstances should unverified, freshly scraped schedules be mixed into public views. They must live as draft states (`is_scraped_draft = true`).
+
+##  Repository Blueprint
+- `.env` (Project Root): Contains Supabase environment configurations. VITE parameters are public. Server/Python role tokens are confidential.
+- `src/repositories/`: Implements the Data Access Object (DAO) pattern separating direct data client manipulations from app logic layers.
+- `src/services/`: Structural coordinator layer mapping operations across multi-table repositories.
+- `src/views/pages/`: Contains view screens. `Home.jsx` handles consumer queries. `AdminDashboard.jsx` handles data entry.
+- `scraper/`: Isolated Python engine namespace. Handles out-of-band cron execution web tasks and PDF extractions.
+
+## Database
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.admin (
+  admin_id integer NOT NULL DEFAULT nextval('admin_admin_id_seq'::regclass),
+  parish_id integer,
+  name character varying NOT NULL,
+  email character varying NOT NULL UNIQUE,
+  password_hash character varying NOT NULL,
+  auth_uid uuid,
+  CONSTRAINT admin_pkey PRIMARY KEY (admin_id),
+  CONSTRAINT admin_parish_id_fkey FOREIGN KEY (parish_id) REFERENCES public.parish(parish_id)
+);
+CREATE TABLE public.mass_types (
+  mass_type_id integer NOT NULL DEFAULT nextval('mass_types_mass_type_id_seq'::regclass),
+  admin_id integer,
+  name character varying NOT NULL,
+  color character varying NOT NULL DEFAULT '#2C3E91'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT mass_types_pkey PRIMARY KEY (mass_type_id),
+  CONSTRAINT mass_types_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.admin(admin_id)
+);
+CREATE TABLE public.parish (
+  parish_id integer NOT NULL DEFAULT nextval('parish_parish_id_seq'::regclass),
+  name character varying NOT NULL,
+  address text,
+  city character varying,
+  contact_number character varying,
+  email character varying,
+  website character varying,
+  last_updated timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+  location_url character varying,
+  target_scrape_url text,
+  last_automated_sync timestamp with time zone,
+  CONSTRAINT parish_pkey PRIMARY KEY (parish_id)
+);
+CREATE TABLE public.schedule_templates (
+  template_id integer NOT NULL DEFAULT nextval('schedule_templates_template_id_seq'::regclass),
+  admin_id integer,
+  name character varying NOT NULL,
+  is_default boolean NOT NULL DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT schedule_templates_pkey PRIMARY KEY (template_id),
+  CONSTRAINT schedule_templates_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.admin(admin_id)
+);
+CREATE TABLE public.template_schedules (
+  template_schedule_id integer NOT NULL DEFAULT nextval('template_schedules_template_schedule_id_seq'::regclass),
+  template_id integer,
+  mass_type_id integer,
+  day_of_week smallint NOT NULL,
+  start_time time without time zone NOT NULL,
+  end_time time without time zone NOT NULL,
+  language character varying,
+  notes text,
+  last_updated timestamp with time zone DEFAULT now(),
+  is_scraped_draft boolean DEFAULT false,
+  CONSTRAINT template_schedules_pkey PRIMARY KEY (template_schedule_id),
+  CONSTRAINT template_schedules_mass_type_id_fkey FOREIGN KEY (mass_type_id) REFERENCES public.mass_types(mass_type_id),
+  CONSTRAINT template_schedules_template_id_fkey FOREIGN KEY (template_id) REFERENCES public.schedule_templates(template_id)
+);
