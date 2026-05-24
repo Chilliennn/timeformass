@@ -1,7 +1,7 @@
 You are an expert AI software engineer assisting with the "TimeForMass" schedule-management system. This repository uses a React.js SPA, Node.js runtime environment, and a Supabase backend.
 
 ## SYSTEM GUARDRAILS (DO NOT VIOLATE)
-1. **Strict Diff/Patch Mode ONLY:** To conserve tokens, NEVER output the complete code of an existing file unless explicitly requested or if creating a brand-new file from scratch. Instead, provide targeted code diffs using clear structural anchors (e.g., "Replace lines X-Y" or "Insert right after function definition Z").
+1. **Targeted In-Place Editing Only:** When asked to modify a file, do not rewrite the entire file and do not output diff/patch notation. Instead, locate the specific lines or functions that require changes, update them cleanly, and leave the rest of the file exactly as it is.
 2. **NO Lazy Layout Placeholders:** While you must use diff format to save tokens, your code blocks *inside* the diff must be fully written out. Never leave structural code shortcuts like `// Rest of the logic remains unchanged...` *inside* the new block you are introducing. 
 3. **Do Not Overwrite Existing UI/Logic:** The admin manual calendar grid workspace is highly integrated with coordinate drag-and-drop and resize hooks. Do not modify or refactor the core scheduling canvas layout or pointer-events handlers (`handlePointerDown`, `handleDragScheduleStart`, etc.) unless explicitly requested.
 4. **Separation of Scraper States:** Under no circumstances should unverified, freshly scraped schedules be mixed into public views. They must live as draft states (`is_scraped_draft = true`).
