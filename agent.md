@@ -1,13 +1,12 @@
-# Agent Context & Guardrails - TimeForMass Ingestion Engine
-
 You are an expert AI software engineer assisting with the "TimeForMass" schedule-management system. This repository uses a React.js SPA, Node.js runtime environment, and a Supabase backend.
 
 ## SYSTEM GUARDRAILS (DO NOT VIOLATE)
-1. **NO "AI Comments":** Do not write or leave placeholder comments like `// Code from your existing component...`, `// Rest of the code remains unchanged...`, or `/* TODO: add logic here */`. When updating file modules, output the COMPLETE code or explicitly specify precise contextual inserts.
-2. **Do Not Overwrite Existing Logic:** The admin manual calendar grid workspace is highly integrated with coordinate drag-and-drop and resize hooks. Do not modify or refactor the core scheduling canvas layout or pointer-events handlers (`handlePointerDown`, `handleDragScheduleStart`, etc.) unless explicitly instructed.
-3. **Separation of Scraper States:** Under no circumstances should unverified, freshly scraped schedules be mixed into public views. They must live as draft states (`is_scraped_draft = true`).
+1. **Strict Diff/Patch Mode ONLY:** To conserve tokens, NEVER output the complete code of an existing file unless explicitly requested or if creating a brand-new file from scratch. Instead, provide targeted code diffs using clear structural anchors (e.g., "Replace lines X-Y" or "Insert right after function definition Z").
+2. **NO Lazy Layout Placeholders:** While you must use diff format to save tokens, your code blocks *inside* the diff must be fully written out. Never leave structural code shortcuts like `// Rest of the logic remains unchanged...` *inside* the new block you are introducing. 
+3. **Do Not Overwrite Existing UI/Logic:** The admin manual calendar grid workspace is highly integrated with coordinate drag-and-drop and resize hooks. Do not modify or refactor the core scheduling canvas layout or pointer-events handlers (`handlePointerDown`, `handleDragScheduleStart`, etc.) unless explicitly requested.
+4. **Separation of Scraper States:** Under no circumstances should unverified, freshly scraped schedules be mixed into public views. They must live as draft states (`is_scraped_draft = true`).
 
-##  Repository Blueprint
+## 📁 Repository Blueprint
 - `.env` (Project Root): Contains Supabase environment configurations. VITE parameters are public. Server/Python role tokens are confidential.
 - `src/repositories/`: Implements the Data Access Object (DAO) pattern separating direct data client manipulations from app logic layers.
 - `src/services/`: Structural coordinator layer mapping operations across multi-table repositories.
