@@ -41,31 +41,57 @@ class HolyRosaryEngine(BaseEngine):
 	)
 
 	def scrape(self):
-		html_response = requests.get(
-			self.target_url,
-			headers={"User-Agent": self._user_agent()},
-			timeout=30,
-		)
-		html_response.raise_for_status()
+		session = requests.Session()
+		headers = {"User-Agent": self._user_agent()}
 
-		soup = BeautifulSoup(html_response.text, "html.parser")
-		bulletin_link = self._find_latest_bulletin_link(soup)
-
-		pdf_response = requests.get(
-			bulletin_link["pdf_url"],
-			headers={"User-Agent": self._user_agent()},
-			timeout=60,
-		)
-		pdf_response.raise_for_status()
-
-		pdf_bytes = io.BytesIO(pdf_response.content)
-		doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 		try:
-			pdf_text = "\n".join(page.get_text("text") for page in doc)
-		finally:
-			doc.close()
+			html_response = session.get(
+				self.target_url,
+				headers=headers,
+				timeout=30,
+			)
+			html_response.raise_for_status()
+		except Exception as exc:
+			raise RuntimeError(f"[fetch_bulletin_html] {exc}") from exc
 
-		schedules = self._parse_schedule_text(pdf_text)
+		try:
+			soup = BeautifulSoup(html_response.text, "html.parser")
+			bulletin_link = self._find_latest_bulletin_link(soup)
+		except Exception as exc:
+			raise RuntimeError(f"[find_latest_bulletin_link] {exc}") from exc
+
+		try:
+			if bulletin_link["download_mode"] == "direct":
+				pdf_response = session.get(
+					bulletin_link["pdf_url"],
+					headers=headers,
+					timeout=60,
+				)
+				pdf_response.raise_for_status()
+			else:
+				pdf_response = self._download_postback_pdf(
+					session=session,
+					headers=headers,
+					page_soup=soup,
+					event_target=bulletin_link["event_target"],
+				)
+		except Exception as exc:
+			raise RuntimeError(f"[download_pdf] {exc}") from exc
+
+		try:
+			pdf_bytes = io.BytesIO(pdf_response.content)
+			doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+			try:
+				pdf_text = "\n".join(page.get_text("text") for page in doc)
+			finally:
+				doc.close()
+		except Exception as exc:
+			raise RuntimeError(f"[parse_pdf_text] {exc}") from exc
+
+		try:
+			schedules = self._parse_schedule_text(pdf_text)
+		except Exception as exc:
+			raise RuntimeError(f"[extract_schedule_blocks] {exc}") from exc
 
 		return {
 			"source": "Holy Rosary Church",
@@ -97,12 +123,17 @@ class HolyRosaryEngine(BaseEngine):
 
 			bulletin_date = datetime.strptime(match.group("date"), "%d%m%Y")
 			file_name = match.group(0)
-			pdf_url = urljoin(self.base_url, anchor["href"])
+			href = anchor["href"]
+			event_target = self._extract_postback_target(href)
+			is_direct = bool(href and not href.lower().startswith("javascript:"))
+			pdf_url = urljoin(self.base_url, href) if is_direct else None
 			candidates.append(
 				{
 					"bulletin_date": bulletin_date,
 					"file_name": file_name,
 					"pdf_url": pdf_url,
+					"event_target": event_target,
+					"download_mode": "direct" if is_direct else "postback",
 				}
 			)
 
@@ -111,6 +142,48 @@ class HolyRosaryEngine(BaseEngine):
 
 		candidates.sort(key=lambda item: item["bulletin_date"], reverse=True)
 		return candidates[0]
+
+	def _extract_postback_target(self, href):
+		if not href:
+			return None
+		match = re.search(r"__doPostBack\('([^']+)'", href)
+		return match.group(1) if match else None
+
+	def _download_postback_pdf(self, session, headers, page_soup, event_target):
+		if not event_target:
+			raise ValueError("Missing __doPostBack event target for bulletin download row.")
+
+		form = page_soup.find("form")
+		if not form:
+			raise ValueError("Unable to locate ASP.NET form for postback download.")
+
+		payload = {
+			"__EVENTTARGET": event_target,
+			"__EVENTARGUMENT": "",
+		}
+
+		for input_el in form.find_all("input"):
+			name = input_el.get("name")
+			if not name or name in payload:
+				continue
+			payload[name] = input_el.get("value", "")
+
+		response = session.post(
+			self.target_url,
+			headers=headers,
+			data=payload,
+			timeout=60,
+		)
+		response.raise_for_status()
+
+		content_type = (response.headers.get("Content-Type") or "").lower()
+		if "pdf" not in content_type and not response.content.startswith(b"%PDF"):
+			raise ValueError(
+				"Postback response did not return a PDF payload. "
+				f"Content-Type={response.headers.get('Content-Type', '')}"
+			)
+
+		return response
 
 	def _parse_schedule_text(self, pdf_text):
 		normalized_text = pdf_text.replace("\r", "\n")

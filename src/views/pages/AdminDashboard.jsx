@@ -105,14 +105,12 @@ const handlePointerDown = (e, schedule) => {
   const clickedControl = e.target && e.target.closest && e.target.closest('button, .schedule-resize-handle, .schedule-delete, .schedule-edit');
   pointerDownRef.current.clickedControl = !!clickedControl;
 
-  // For touch: start long press timer for dragging.
   if (e.type === "touchstart") {
     if (touchLongPressTimer.current) clearTimeout(touchLongPressTimer.current);
     touchLongPressTimer.current = setTimeout(() => {
       handleDragScheduleStart(e, schedule);
     }, 500);
   } else {
-    // For mouse: set pendingDragRef to true if not clicking a control.
     if (!clickedControl) {
       pendingDragRef.current = true;
     }
@@ -126,7 +124,6 @@ const handlePointerDown = (e, schedule) => {
     const dy = clientY - pointerDownRef.current.y;
     const dist = Math.hypot(dx, dy);
 
-    // if mouse moved enough, begin drag
     if (pendingDragRef.current && dist > 6 && e.type.indexOf("mouse") !== -1) {
       setActiveScheduleId(null);
       pendingDragRef.current = false;
@@ -136,13 +133,11 @@ const handlePointerDown = (e, schedule) => {
   };
 
   const handlePointerUp = (e, schedule) => {
-  // Clear any long-press timer
   if (touchLongPressTimer.current) {
     clearTimeout(touchLongPressTimer.current);
     touchLongPressTimer.current = null;
   }
 
-  // If dragging is ongoing, finish drag
   if (isDragging && draggedSchedule) {
     handleDragScheduleEnd();
     pointerDownRef.current = null;
@@ -150,7 +145,6 @@ const handlePointerDown = (e, schedule) => {
     return;
   }
 
-  // If user clicked a control (delete/edit), don't toggle icons
   const pd = pointerDownRef.current;
   if (!pd) return;
 
@@ -205,17 +199,14 @@ const handlePointerDown = (e, schedule) => {
 
       setParish(parishRow);
 
-      // Load mass types for this admin
       const types = await massTypeRepository.findByAdminId(adminRow.admin_id);
       setMassTypes(types);
 
-      // Load templates
       const templatesList = await templateRepository.findByAdminId(
         adminRow.admin_id
       );
 
       if (templatesList.length === 0) {
-        // Create default template if none exists
         const defaultTemplate = await templateRepository.insert({
           admin_id: adminRow.admin_id,
           name: "Template 1",
@@ -264,7 +255,11 @@ const handlePointerDown = (e, schedule) => {
         })
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Server connection error');
+      if (!response.ok) {
+        const stageLabel = result.stage ? `Stage: ${result.stage}` : 'Stage: unknown';
+        const detailLabel = result.detail || result.error || 'Server connection error';
+        throw new Error(`${stageLabel}\n${detailLabel}`);
+      }
       alert(`Synchronization finished: ${result.message}`);
 
       // Automatically trigger a refresh of the template schedules layout view
@@ -272,7 +267,7 @@ const handlePointerDown = (e, schedule) => {
       setSchedules(scheduleData);
     } catch (err) {
       console.error("Scraper execution fail:", err);
-      alert(`Scraper execution failed: ${err.message}`);
+      alert(`Scraper execution failed:\n${err.message}`);
     } finally {
       setScrapingTarget(null);
     }
@@ -302,10 +297,8 @@ const handlePointerDown = (e, schedule) => {
         setSaving(true);
         console.log("Auto-saved schedules");
 
-        // Show saved message
         setShowSavedMessage(true);
 
-        // Hide message after 2 seconds
         if (savedMessageTimeoutRef.current) {
           clearTimeout(savedMessageTimeoutRef.current);
         }
@@ -360,8 +353,8 @@ const handlePointerDown = (e, schedule) => {
 
   // Add schedule from mass type
   const handleAddScheduleFromType = async (massType) => {
-    setPlacingMassType(massType); // Enter placing mode
-    document.body.style.cursor = "crosshair"; // Change cursor
+    setPlacingMassType(massType); 
+    document.body.style.cursor = "crosshair"; 
   };
 
   // Cancel placing mode on Escape
@@ -845,7 +838,6 @@ const handlePointerDown = (e, schedule) => {
               <span className="mass-title-short">{shortName}</span>
             </span>
 
-            {/* actions container: delete on top, edit below */}
             <div
               className="schedule-actions"
               onClick={(e) => e.stopPropagation()}
@@ -960,7 +952,7 @@ const handlePointerDown = (e, schedule) => {
               <button
                 className="dropdown-item"
                 onClick={() => {
-                  setShowProfileDropdown(false); /* add logout logic here */
+                  setShowProfileDropdown(false);
                 }}
               >
                 Logout
@@ -1182,20 +1174,16 @@ const handlePointerDown = (e, schedule) => {
                   const year = middleOfWeek.getFullYear();
                   const month = middleOfWeek.getMonth();
 
-                  // First day of the month
                   const firstDay = new Date(year, month, 1);
                   const startingDayOfWeek = firstDay.getDay();
 
-                  // Last day of the month
                   const lastDay = new Date(year, month + 1, 0);
                   const daysInMonth = lastDay.getDate();
 
-                  // Previous month's last day
                   const prevMonthLastDay = new Date(year, month, 0).getDate();
 
                   const days = [];
 
-                  // Previous month padding (grayed out)
                   for (let i = startingDayOfWeek - 1; i >= 0; i--) {
                     const dayNum = prevMonthLastDay - i;
                     days.push(

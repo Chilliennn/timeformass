@@ -40,12 +40,16 @@ app.post('/api/scrape', (req, res) => {
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
+  let stderrBuffer = '';
+
   scraperProcess.stdout.on('data', (chunk) => {
     process.stdout.write(`[scraper stdout] ${chunk.toString()}`);
   });
 
   scraperProcess.stderr.on('data', (chunk) => {
-    process.stderr.write(`[scraper stderr] ${chunk.toString()}`);
+    const text = chunk.toString();
+    stderrBuffer += text;
+    process.stderr.write(`[scraper stderr] ${text}`);
   });
 
   scraperProcess.on('error', (error) => {
@@ -53,7 +57,9 @@ app.post('/api/scrape', (req, res) => {
 
     if (!res.headersSent) {
       res.status(500).json({
-        error: 'Scraper failed to start.'
+        error: 'Scraper failed to start.',
+        stage: 'spawn_python_process',
+        detail: error.message
       });
     }
   });
@@ -70,8 +76,43 @@ app.post('/api/scrape', (req, res) => {
       });
     }
 
+    let stage = 'unknown';
+    let detail = `Scraper process exited with code ${code}.`;
+    const stderrLines = stderrBuffer
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    for (let i = stderrLines.length - 1; i >= 0; i -= 1) {
+      try {
+        const parsed = JSON.parse(stderrLines[i]);
+        stage = parsed.stage || stage;
+        detail = parsed.error || detail;
+        break;
+      } catch {
+        // Continue scanning for a JSON payload line.
+      }
+    }
+
+    if (stage === 'unknown' && stderrLines.length > 0) {
+      const stageMatch = stderrBuffer.match(/\[(?<stage>[^\]]+)\]/);
+      if (stageMatch?.groups?.stage) {
+        stage = stageMatch.groups.stage;
+      } else if (/ModuleNotFoundError|ImportError/.test(stderrBuffer)) {
+        stage = 'bootstrap_python_import';
+      } else if (/Traceback/.test(stderrBuffer)) {
+        stage = 'python_runtime';
+      }
+
+      if (detail.startsWith('Scraper process exited with code')) {
+        detail = stderrLines.slice(-6).join('\n');
+      }
+    }
+
     return res.status(500).json({
-      error: `Scraper process exited with code ${code}.`
+      error: `Scraper failed at stage: ${stage}`,
+      stage,
+      detail
     });
   });
 });
