@@ -65,9 +65,26 @@ export const templateRepository = {
         mass_types (*)
       `)
       .eq('template_id', templateId)
+      .eq('is_scraped_draft', false)
       .order('day_of_week')
       .order('start_time');
     
+    if (error) throw error;
+    return data;
+  },
+
+  async getStagedDraftSchedules(templateId) {
+    const { data, error } = await supabase
+      .from('template_schedules')
+      .select(`
+        *,
+        mass_types (*)
+      `)
+      .eq('template_id', templateId)
+      .eq('is_scraped_draft', true)
+      .order('day_of_week')
+      .order('start_time');
+
     if (error) throw error;
     return data;
   },
