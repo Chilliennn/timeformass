@@ -12,6 +12,7 @@ function AdminDashboard() {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [schedules, setSchedules] = useState([]);
   const [massTypes, setMassTypes] = useState([]);
+  const [scrapingTarget, setScrapingTarget] = useState(null);
   const [currentWeek, setCurrentWeek] = useState(getWeekDates(new Date()));
   const [showAddMassType, setShowAddMassType] = useState(false);
   const [showAddTemplate, setShowAddTemplate] = useState(false);
@@ -249,6 +250,34 @@ const handlePointerDown = (e, schedule) => {
     };
   }, []);
 
+  const handleTriggerScraper = async (triggerId) => {
+    if (!selectedTemplate || !admin) return;
+    setScrapingTarget(triggerId);
+    try {
+      const response = await fetch('http://localhost:5000/api/scrape', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          adminId: admin.admin_id,
+          triggerId: triggerId,
+          templateId: selectedTemplate.template_id
+        })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Server connection error');
+      alert(`Synchronization finished: ${result.message}`);
+
+      // Automatically trigger a refresh of the template schedules layout view
+      const scheduleData = await templateRepository.getTemplateSchedules(selectedTemplate.template_id);
+      setSchedules(scheduleData);
+    } catch (err) {
+      console.error("Scraper execution fail:", err);
+      alert(`Scraper execution failed: ${err.message}`);
+    } finally {
+      setScrapingTarget(null);
+    }
+  };
+
   // Load schedules for selected template
   useEffect(() => {
     async function loadSchedules() {
@@ -262,10 +291,8 @@ const handlePointerDown = (e, schedule) => {
 
     loadSchedules();
   }, [selectedTemplate]);
-
-  // Auto-save with debounce
-  // eslint-disable-next-line no-unused-vars
-  const autoSave = useCallback(async (_updatedSchedules) => {
+  
+  const autoSave = useCallback(async () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -1223,6 +1250,34 @@ const handlePointerDown = (e, schedule) => {
                 })()}
               </div>
             </div>
+            {admin.admin_id === 1 && (
+              <div className="mass-types-section" style={{ marginTop: '0.2rem', border: '2px solid rgba(44, 62, 145, 0.12)' }}>
+                <div className="mass-types-header">
+                  <h3 style={{ color: '#2c3e91' }}>⚡ Target Site Synchronizations</h3>
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#666666', margin: '0.5rem 0 1rem 0', lineHeight: '1.4' }}>
+                  Trigger independent web crawling background scripts to collect mass schedule listings directly into the staging engine dataset.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  <button 
+                    className="btn-add-template" 
+                    style={{ backgroundColor: '#2c3e91', width: '100%', margin: 0 }}
+                    disabled={scrapingTarget !== null}
+                    onClick={() => handleTriggerScraper('st_michael_btn')}
+                  >
+                    {scrapingTarget === 'st_michael_btn' ? '⏳ Syncing St. Michael...' : 'Sync St. Michael Church'}
+                  </button>
+                  <button 
+                    className="btn-add-template" 
+                    style={{ backgroundColor: '#6ba368', width: '100%', margin: 0 }}
+                    disabled={scrapingTarget !== null}
+                    onClick={() => handleTriggerScraper('st_ignatius_btn')}
+                  >
+                    {scrapingTarget === 'st_ignatius_btn' ? '⏳ Syncing St. Ignatius...' : 'Sync St. Ignatius Church'}
+                  </button>
+                </div>
+              </div>
+            )}
             {/* Mass Types */}
             <div className="mass-types-section">
               <div className="mass-types-header">
