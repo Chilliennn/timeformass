@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -13,6 +14,14 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 const SCRAPER_SCRIPT = path.resolve(__dirname, 'src/scraper/main.py');
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+
+const supabaseAdmin =
+  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    : null;
 
 app.use(express.json());
 app.use(
@@ -74,12 +83,38 @@ app.post('/api/scrape', (req, res) => {
 
     if (code === 0) {
       try {
+        if (!supabaseAdmin) {
+          throw new Error('Supabase server client is not configured.');
+        }
+
         const payload = JSON.parse(outputData.trim());
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
+        const templateIdInt = parseInt(templateId, 10);
+
+        const rowsToInsert = schedules.map((item) => ({
+          template_id: templateIdInt,
+          mass_type_id: null,
+          day_of_week: item.day_of_week,
+          start_time: item.start_time,
+          end_time: item.end_time,
+          language: item.language,
+          notes: item.notes,
+          is_scraped_draft: true
+        }));
+
+        if (rowsToInsert.length > 0) {
+          const { error } = await supabaseAdmin
+            .from('template_schedules')
+            .insert(rowsToInsert);
+
+          if (error) {
+            throw error;
+          }
+        }
 
         return res.status(200).json({
           success: true,
-          message: `Successfully scraped ${schedules.length} schedules. Awaiting approval before saving to the database.`,
+          message: `Successfully scraped and imported ${schedules.length} schedules as drafts!`,
           source: payload.source || null,
           schedules
         });

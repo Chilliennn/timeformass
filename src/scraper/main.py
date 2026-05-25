@@ -14,10 +14,20 @@ def main():
 
 	try:
 		from engines.holy_rosary import HolyRosaryEngine
+		from engines.st_john import StJohnEngine
 	except Exception as error:
 		raise RuntimeError(f"[bootstrap_python_import] {error}") from error
 
-	engine = HolyRosaryEngine()
+	engine_registry = {
+		"holy_rosary_btn": HolyRosaryEngine,
+		"st_john_btn": StJohnEngine,
+	}
+
+	engine_class = engine_registry.get(trigger_id)
+	if not engine_class:
+		raise RuntimeError(f"[engine_registry] Unknown trigger id: {trigger_id}")
+
+	engine = engine_class()
 	result = engine.scrape()
 
 	payload = {

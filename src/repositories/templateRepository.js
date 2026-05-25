@@ -56,7 +56,6 @@ export const templateRepository = {
     if (error) throw error;
   },
 
-  // Template Schedules
   async getTemplateSchedules(templateId) {
     const { data, error } = await supabase
       .from('template_schedules')
