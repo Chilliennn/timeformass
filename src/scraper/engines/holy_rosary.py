@@ -211,7 +211,7 @@ class HolyRosaryEngine(BaseEngine):
 		for section_language, section_text in sections:
 			schedules.extend(self._parse_section(section_text, section_language))
 
-		return schedules
+		return self._dedupe_schedules(schedules)
 
 	def _parse_section(self, section_text, default_language):
 		compact_text = re.sub(r"\s+", " ", section_text).strip()
@@ -229,29 +229,53 @@ class HolyRosaryEngine(BaseEngine):
 			if not time_matches:
 				continue
 
-			start_raw = time_matches[0].group("start")
-			end_raw = time_matches[0].group("end")
-			if not end_raw and len(time_matches) > 1:
-				end_raw = time_matches[1].group("start")
-
-			start_time = self._normalize_time(start_raw)
-			end_time = self._normalize_time(end_raw) if end_raw else self._plus_one_hour(start_time)
-
 			day_name = day_match.group("day")
-			notes = self._extract_notes(chunk, day_name, start_raw, end_raw)
-			language = self._infer_language(chunk, default_language)
+			season_notes = self._extract_notes(chunk, day_name, None, None)
 
-			entries.append(
-				{
-					"day_of_week": self._day_name_to_int(day_name),
-					"start_time": start_time,
-					"end_time": end_time,
-					"language": language,
-					"notes": notes,
-				}
-			)
+			if len(time_matches) == 1 or self._looks_like_time_range(time_matches):
+				start_raw = time_matches[0].group("start")
+				end_raw = time_matches[0].group("end")
+				start_time = self._normalize_time(start_raw)
+				end_time = self._normalize_time(end_raw) if end_raw else self._plus_one_hour(start_time)
+
+				entries.append(
+					{
+						"day_of_week": self._day_name_to_int(day_name),
+						"start_time": start_time,
+						"end_time": end_time,
+						"language": self._infer_language(chunk, default_language),
+						"notes": season_notes,
+					}
+				)
+				continue
+
+			for time_index, time_match in enumerate(time_matches):
+				start_raw = time_match.group("start")
+				start_time = self._normalize_time(start_raw)
+				end_time = self._plus_one_hour(start_time)
+				language = self._infer_language_for_time_segment(
+					chunk=chunk,
+					time_matches=time_matches,
+					time_index=time_index,
+					default_language=default_language,
+				)
+
+				entries.append(
+					{
+						"day_of_week": self._day_name_to_int(day_name),
+						"start_time": start_time,
+						"end_time": end_time,
+						"language": language,
+						"notes": season_notes,
+					}
+				)
 
 		return entries
+
+	def _looks_like_time_range(self, time_matches):
+		if len(time_matches) != 1:
+			return False
+		return bool(time_matches[0].group("end"))
 
 	def _extract_mass_section_text(self, doc):
 		collected_blocks = []
@@ -344,6 +368,43 @@ class HolyRosaryEngine(BaseEngine):
 		if not season:
 			return ""
 		return season
+
+	def _infer_language_for_time_segment(self, chunk, time_matches, time_index, default_language):
+		segment_start = time_matches[time_index].start()
+		segment_end = time_matches[time_index + 1].start() if time_index + 1 < len(time_matches) else len(chunk)
+		segment = chunk[segment_start:segment_end]
+
+		if re.search(r"\(\s*E\s*\)", segment, re.IGNORECASE) or re.search(r"\bE\b", segment, re.IGNORECASE):
+			return "English"
+
+		if re.search(r"\(\s*M\s*\)", segment, re.IGNORECASE) or re.search(r"\bM\b", segment, re.IGNORECASE):
+			return "Mandarin"
+
+		if len(time_matches) > 1 and re.search(r"\(\s*E\s*\).*\(\s*M\s*\)", chunk, re.IGNORECASE):
+			return "English" if time_index == 0 else "Mandarin"
+
+		return self._infer_language(segment, default_language)
+
+	def _dedupe_schedules(self, schedules):
+		unique_schedules = []
+		seen = set()
+
+		for schedule in schedules:
+			signature = (
+				schedule.get("day_of_week"),
+				schedule.get("start_time"),
+				schedule.get("end_time"),
+				schedule.get("language", "").strip().lower(),
+				schedule.get("notes", "").strip().lower(),
+			)
+
+			if signature in seen:
+				continue
+
+			seen.add(signature)
+			unique_schedules.append(schedule)
+
+		return unique_schedules
 
 	def _extract_liturgical_season(self, chunk):
 		season_patterns = (
