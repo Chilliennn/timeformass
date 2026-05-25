@@ -871,12 +871,12 @@
 
 @media (max-width: 1024px) {
   .schedule-calendar-wrapper {
-    grid-template-columns: 1fr; /* Single column layout */
+    grid-template-columns: 1fr; 
     gap: 1.5rem;
   }
 
   .admin-sidebar {
-    flex-direction: row; /* Sidebar items side-by-side */
+    flex-direction: row; 
     gap: 1.5rem;
   }
 
@@ -891,7 +891,7 @@
   }
   
   .admin-sidebar {
-    flex-direction: column; /* Stack calendar and mass types */
+    flex-direction: column; 
   }
 
   .admin-header {
@@ -934,7 +934,6 @@
   .schedule-block-title { font-size: clamp(0.56rem, 1.8vw, 0.7rem); }
   .schedule-block-time { font-size: clamp(0.5rem, 1.6vw, 0.6rem); }
   
-  /* stack sidebar below schedule on very small screens */
   .schedule-calendar-wrapper {
     grid-template-columns: 1fr;
   }
@@ -955,7 +954,6 @@
   gap: 0.25rem;
 }
 
-/* Placing mode banner */
 .placing-mode-banner {
   grid-column: 1 / -1;
   background-color: #d4af37;
@@ -976,7 +974,6 @@
   background-color: rgba(212, 175, 55, 0.1);
 }
 
-/* Half-hour rows */
 .grid-row-half {
   grid-template-rows: 30px;
 }
@@ -986,7 +983,6 @@
   opacity: 0.7;
 }
 
-/* Calendar widget */
 .calendar-widget {
   background-color: white;
   border-radius: 14px;
@@ -1435,16 +1431,18 @@ height: var(--hour-row-h);
   top: 6px;
   right: 6px;
   display: flex;
-  flex-direction: row; /* Horizontal layout */
+  flex-direction: row; 
   gap: 6px;
   z-index: 30;
-  opacity: 0; /* Hidden by default */
+  opacity: 0; 
   transform: scale(0.95) translateY(-4px);
   pointer-events: none;
   transition: opacity 160ms ease, transform 160ms ease;
 }
 
-.schedule-block.active .schedule-actions {
+.schedule-block:hover .schedule-actions,
+.schedule-block.active .schedule-actions,
+.schedule-block:focus-within .schedule-actions {
   opacity: 1;
   transform: scale(1) translateY(0);
   pointer-events: auto;
@@ -1494,6 +1492,17 @@ height: var(--hour-row-h);
 .schedule-actions .schedule-delete:hover,
 .schedule-actions .schedule-edit:hover {
   background: rgba(255,255,255,0.38);
+}
+
+.draft-schedule-block .schedule-delete {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.draft-schedule-block:hover .schedule-delete,
+.draft-schedule-block:focus-within .schedule-delete {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .schedule-block-header {

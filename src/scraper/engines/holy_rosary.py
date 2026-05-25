@@ -82,7 +82,7 @@ class HolyRosaryEngine(BaseEngine):
 			pdf_bytes = io.BytesIO(pdf_response.content)
 			doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 			try:
-				pdf_text = "\n".join(page.get_text("text") for page in doc)
+				pdf_text = self._extract_mass_section_text(doc)
 			finally:
 				doc.close()
 		except Exception as exc:
@@ -253,6 +253,35 @@ class HolyRosaryEngine(BaseEngine):
 
 		return entries
 
+	def _extract_mass_section_text(self, doc):
+		collected_blocks = []
+		for page_index, page in enumerate(doc):
+			page_width = page.rect.width
+			page_midpoint = page.rect.x0 + (page_width / 2)
+			for block in page.get_text("blocks", sort=True):
+				x0, y0, x1, y1, text = block[:5]
+				cleaned_text = (text or "").strip()
+				if not cleaned_text:
+					continue
+
+				if not self._is_mass_section_block(cleaned_text, x0, x1, page_midpoint):
+					continue
+
+				collected_blocks.append((page_index, y0, cleaned_text))
+
+		collected_blocks.sort(key=lambda item: (item[0], item[1]))
+		return "\n".join(text for _, _, text in collected_blocks)
+
+	def _is_mass_section_block(self, text, block_x0, block_x1, page_midpoint):
+		if block_x0 >= page_midpoint:
+			return False
+
+		if self.DAY_PATTERN.search(text) or self.TIME_PATTERN.search(text):
+			return True
+
+		mass_heading_pattern = re.compile(r"Mass Times and Mass Intentions|Mass Times|Mass Intentions", re.IGNORECASE)
+		return bool(mass_heading_pattern.search(text))
+
 	def _detect_language(self, line):
 		for pattern, label in self.LANGUAGE_PATTERNS:
 			if pattern.search(line):
@@ -311,17 +340,30 @@ class HolyRosaryEngine(BaseEngine):
 		return bumped.strftime("%H:%M:%S")
 
 	def _extract_notes(self, chunk, day_name, start_raw, end_raw):
-		notes = chunk
-		notes = re.sub(self.DAY_PATTERN, " ", notes)
-		notes = re.sub(self.TIME_PATTERN, " ", notes)
-		for pattern, _label in self.LANGUAGE_PATTERNS:
-			notes = pattern.sub(" ", notes)
-		notes = re.sub(r"\bBulletin\b", " ", notes, flags=re.IGNORECASE)
-		notes = re.sub(r"\bPDF\b", " ", notes, flags=re.IGNORECASE)
-		notes = re.sub(r"[|]+", " ", notes)
-		notes = re.sub(r"\s+", " ", notes).strip(" -,:;")
+		season = self._extract_liturgical_season(chunk)
+		if not season:
+			return ""
+		return season
 
-		if re.search(r"\bNovena\b", chunk, re.IGNORECASE) and "Novena" not in notes:
-			notes = f"{notes} Novena".strip()
+	def _extract_liturgical_season(self, chunk):
+		season_patterns = (
+			(re.compile(r"\b\d+(?:st|nd|rd|th)\s+Week\s+(?:in|of)\s+Ordinary\s+Time\b", re.IGNORECASE), None),
+			(re.compile(r"\bOrdinary\s+Time\b", re.IGNORECASE), "Ordinary Time"),
+			(re.compile(r"\b\d+(?:st|nd|rd|th)\s+Week\s+of\s+Easter\b", re.IGNORECASE), None),
+			(re.compile(r"\bEastertide\b", re.IGNORECASE), "Eastertide"),
+			(re.compile(r"\bEaster\s+Season\b", re.IGNORECASE), "Eastertide"),
+			(re.compile(r"\bEaster\b", re.IGNORECASE), "Easter"),
+			(re.compile(r"\bAdvent\b", re.IGNORECASE), "Advent"),
+			(re.compile(r"\bLent\b", re.IGNORECASE), "Lent"),
+			(re.compile(r"\bHoly\s+Week\b", re.IGNORECASE), "Holy Week"),
+			(re.compile(r"\bTriduum\b", re.IGNORECASE), "Triduum"),
+			(re.compile(r"\bChristmas\b", re.IGNORECASE), "Christmas"),
+		)
 
-		return notes
+		for pattern, canonical_label in season_patterns:
+			match = pattern.search(chunk)
+			if not match:
+				continue
+			return match.group(0).strip() if canonical_label is None else canonical_label
+
+		return ""
