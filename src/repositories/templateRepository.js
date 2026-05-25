@@ -100,6 +100,41 @@ export const templateRepository = {
     return data;
   },
 
+  async deleteDraftSchedules(templateId) {
+    const { error } = await supabase
+      .from('template_schedules')
+      .delete()
+      .eq('template_id', templateId)
+      .eq('is_scraped_draft', true);
+
+    if (error) throw error;
+  },
+
+  async insertDraftSchedules(templateId, schedules) {
+    const rows = (schedules || []).map((schedule) => ({
+      template_id: templateId,
+      mass_type_id: schedule.mass_type_id ?? null,
+      day_of_week: schedule.day_of_week,
+      start_time: schedule.start_time,
+      end_time: schedule.end_time,
+      language: schedule.language ?? null,
+      notes: schedule.notes ?? null,
+      is_scraped_draft: true,
+    }));
+
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from('template_schedules')
+      .insert(rows)
+      .select();
+
+    if (error) throw error;
+    return data;
+  },
+
   async insertSchedule(schedule) {
     const { data, error } = await supabase
       .from('template_schedules')
