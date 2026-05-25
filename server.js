@@ -80,6 +80,7 @@ app.post('/api/scrape', (req, res) => {
         return res.status(200).json({
           success: true,
           message: `Successfully scraped ${schedules.length} schedules. Awaiting approval before saving to the database.`,
+          source: payload.source || null,
           schedules
         });
       } catch (error) {

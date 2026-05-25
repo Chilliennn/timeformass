@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabaseClient.js";
+import { adminRepository } from "../../repositories/adminRepository.js";
 import { massTypeRepository } from "../../repositories/massTypeRepository.js";
+import { parishRepository } from "../../repositories/parishRepository.js";
 import { templateRepository } from "../../repositories/templateRepository.js";
 import "./AdminDashboard.css";
 
@@ -296,6 +298,20 @@ const handlePointerDown = (e, schedule) => {
         const detailLabel = result.detail || result.error || 'Server connection error';
         throw new Error(`${stageLabel}\n${detailLabel}`);
       }
+
+      if (result.source === "Holy Rosary Church") {
+        const holyRosaryParish = await parishRepository.findByName("Holy Rosary Church");
+
+        if (holyRosaryParish && admin.parish_id !== holyRosaryParish.parish_id) {
+          const updatedAdmin = await adminRepository.update(admin.admin_id, {
+            parish_id: holyRosaryParish.parish_id,
+          });
+
+          setAdmin(updatedAdmin);
+          setParish(holyRosaryParish);
+        }
+      }
+
       const scrapedDrafts = (Array.isArray(result.schedules) ? result.schedules : []).map(
         (schedule, index) => ({
           ...schedule,

@@ -24,6 +24,18 @@ export const parishRepository = {
     return data;
   },
 
+  // Find parish by exact name
+  async findByName(name) {
+    const { data, error } = await supabase
+      .from('parish')
+      .select('*')
+      .eq('name', name)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  },
+
   // Create new parish
   async save(parish) {
     const { data, error } = await supabase
