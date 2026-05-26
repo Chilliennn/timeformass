@@ -130,6 +130,8 @@ function AdminDashboard() {
     endDate: formatDateForDb(currentWeek[6]),
   });
 
+  const activeCalendarDate = formatDateForDb(currentWeek[3]);
+
   const minutesToPixels = (minutes) => (minutes / 60) * HOUR_BLOCK_HEIGHT;
   const columnHeightPx = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_BLOCK_HEIGHT;
 
@@ -370,26 +372,28 @@ const handlePointerDown = (e, schedule) => {
     }
   };
 
-  const refreshTemplateSchedules = useCallback(async (templateId) => {
+  const refreshTemplateSchedules = useCallback(async (templateId, targetDate = activeCalendarDate) => {
     if (!templateId) return;
 
-    const scheduleData = await templateRepository.getTemplateSchedules(templateId);
+    const scheduleData = await templateRepository.getTemplateSchedulesCombined(
+      templateId,
+      targetDate
+    );
     const draftData = readDraftSchedules(templateId);
 
     setSchedules(scheduleData || []);
     setDraftSchedules(draftData || []);
-  }, []);
+  }, [activeCalendarDate]);
 
-  // Load schedules for selected template
   useEffect(() => {
     async function loadSchedules() {
       if (!selectedTemplate) return;
 
-      await refreshTemplateSchedules(selectedTemplate.template_id);
+      await refreshTemplateSchedules(selectedTemplate.template_id, activeCalendarDate);
     }
 
     loadSchedules();
-  }, [selectedTemplate, refreshTemplateSchedules]);
+  }, [selectedTemplate, refreshTemplateSchedules, activeCalendarDate]);
 
   const autoSave = useCallback(async () => {
     if (saveTimeoutRef.current) {

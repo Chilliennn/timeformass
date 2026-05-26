@@ -86,6 +86,26 @@ export const templateRepository = {
   },
 
   async getTemplateSchedules(templateId) {
+    return this.getTemplateSchedulesCombined(templateId);
+  },
+
+  async getTemplateSchedulesCombined(templateId, targetDate = null) {
+    let templateQuery = supabase
+      .from('schedule_templates')
+      .select('template_id')
+      .eq('template_id', templateId);
+
+    if (targetDate) {
+      templateQuery = templateQuery
+        .lte('start_date', targetDate)
+        .gte('end_date', targetDate);
+    }
+
+    const { data: templateRow, error: templateError } = await templateQuery.maybeSingle();
+
+    if (templateError) throw templateError;
+    if (!templateRow) return [];
+
     const { data, error } = await supabase
       .from('template_schedules')
       .select(`

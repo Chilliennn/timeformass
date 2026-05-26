@@ -4,6 +4,7 @@ import cors from 'cors';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { templateRepository } from './src/repositories/templateRepository.js';
 import { scrapeIngestionService } from './src/services/scrapeIngestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +22,7 @@ app.use(
 );
 
 app.post('/api/scrape', (req, res) => {
-  const { adminId, triggerId, templateId } = req.body ?? {};
+  const { adminId, triggerId, templateId, startDate, endDate } = req.body ?? {};
 
   if (adminId === undefined || triggerId === undefined || templateId === undefined) {
     return res.status(400).json({
@@ -76,6 +77,15 @@ app.post('/api/scrape', (req, res) => {
         const payload = JSON.parse(outputData.trim());
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
         const templateIdInt = parseInt(templateId, 10);
+        const payloadStartDate = payload.start_date || startDate || null;
+        const payloadEndDate = payload.end_date || endDate || null;
+
+        if (payloadStartDate || payloadEndDate) {
+          await templateRepository.update(templateIdInt, {
+            start_date: payloadStartDate,
+            end_date: payloadEndDate,
+          });
+        }
 
         const ingestionResult = await scrapeIngestionService.replaceDraftSchedules(
           templateIdInt,

@@ -1,11 +1,26 @@
 import json
 import re
 import sys
+from datetime import datetime, timedelta
 
 
 def _extract_stage(message):
 	match = re.search(r"\[(?P<stage>[^\]]+)\]", message or "")
 	return match.group("stage") if match else "unknown"
+
+
+def _extract_date_range_from_bulletin_file_name(file_name):
+	if not file_name:
+		return None, None
+
+	match = re.search(r"(?P<date>\d{8})", file_name)
+	if not match:
+		return None, None
+
+	bulletin_date = datetime.strptime(match.group("date"), "%d%m%Y")
+	start_date = bulletin_date.strftime("%Y-%m-%d")
+	end_date = (bulletin_date + timedelta(days=6)).strftime("%Y-%m-%d")
+	return start_date, end_date
 
 
 def main():
@@ -29,11 +44,16 @@ def main():
 
 	engine = engine_class()
 	result = engine.scrape()
+	start_date, end_date = _extract_date_range_from_bulletin_file_name(
+		result.get("bulletin_file_name")
+	)
 
 	payload = {
 		"trigger_id": trigger_id,
 		"template_id": template_id,
 		**result,
+		"start_date": start_date,
+		"end_date": end_date,
 	}
 
 	print(json.dumps(payload, ensure_ascii=False))
