@@ -90,33 +90,23 @@ export const templateRepository = {
   },
 
   async getTemplateSchedulesCombined(templateId, targetDate = null) {
-    let templateQuery = supabase
-      .from('schedule_templates')
-      .select('template_id')
-      .eq('template_id', templateId);
-
-    if (targetDate) {
-      templateQuery = templateQuery
-        .lte('start_date', targetDate)
-        .gte('end_date', targetDate);
-    }
-
-    const { data: templateRow, error: templateError } = await templateQuery.maybeSingle();
-
-    if (templateError) throw templateError;
-    if (!templateRow) return [];
-
-    const { data, error } = await supabase
+    let query = supabase
       .from('template_schedules')
       .select(`
         *,
-        mass_types (*)
+        mass_types (*),
+        schedule_templates!inner (start_date, end_date)
       `)
-      .eq('template_id', templateId)
-      .eq('is_scraped_draft', false)
-      .order('day_of_week')
-      .order('start_time');
-    
+      .eq('template_id', templateId);
+
+    if (targetDate) {
+      query = query
+        .lte('schedule_templates.start_date', targetDate)
+        .gte('schedule_templates.end_date', targetDate);
+    }
+
+    const { data, error } = await query;
+
     if (error) throw error;
     return data;
   },
