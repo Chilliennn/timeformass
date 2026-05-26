@@ -75,15 +75,24 @@ app.post('/api/scrape', (req, res) => {
     if (code === 0) {
       try {
         const payload = JSON.parse(outputData.trim());
+
+        if (!payload.start_date) {
+          payload.start_date = startDate || null;
+        }
+
+        if (!payload.end_date) {
+          payload.end_date = endDate || null;
+        }
+
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
         const templateIdInt = parseInt(templateId, 10);
-        const payloadStartDate = payload.start_date || startDate || null;
-        const payloadEndDate = payload.end_date || endDate || null;
+        const resolvedStartDate = payload.start_date || null;
+        const resolvedEndDate = payload.end_date || null;
 
-        if (payloadStartDate || payloadEndDate) {
+        if (resolvedStartDate || resolvedEndDate) {
           await templateRepository.update(templateIdInt, {
-            start_date: payloadStartDate,
-            end_date: payloadEndDate,
+            start_date: resolvedStartDate,
+            end_date: resolvedEndDate,
           });
         }
 

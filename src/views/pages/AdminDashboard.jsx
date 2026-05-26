@@ -387,7 +387,7 @@ const handlePointerDown = (e, schedule) => {
         setSaving(false);
       }
     }, 1000);
-  }, [schedules]);
+  }, []);
 
   const handleAddMassType = async () => {
     if (!newMassTypeName.trim()) return;
