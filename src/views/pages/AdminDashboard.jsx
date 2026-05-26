@@ -115,6 +115,20 @@ function AdminDashboard() {
     return `${display}:00 ${suffix}`;
   };
 
+  const formatDateForDb = (date) => {
+    if (!date) return null;
+    const normalized = new Date(date);
+    const year = normalized.getFullYear();
+    const month = String(normalized.getMonth() + 1).padStart(2, "0");
+    const day = String(normalized.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const getCurrentWeekDateRange = () => ({
+    startDate: formatDateForDb(currentWeek[0]),
+    endDate: formatDateForDb(currentWeek[6]),
+  });
+
   const minutesToPixels = (minutes) => (minutes / 60) * HOUR_BLOCK_HEIGHT;
   const columnHeightPx = (DAY_END_HOUR - DAY_START_HOUR) * HOUR_BLOCK_HEIGHT;
 
@@ -243,19 +257,29 @@ const handlePointerDown = (e, schedule) => {
       const templatesList = await templateRepository.findByAdminId(
         adminRow.admin_id
       );
+      const initialWeekDates = getWeekDates(new Date());
+      const weekRange = {
+        startDate: formatDateForDb(initialWeekDates[0]),
+        endDate: formatDateForDb(initialWeekDates[6]),
+      };
 
       if (templatesList.length === 0) {
-        const defaultTemplate = await templateRepository.insert({
-          admin_id: adminRow.admin_id,
-          name: "Template 1",
-          is_default: true,
-        });
+        const defaultTemplate = await templateRepository.createTemplate(
+          adminRow.admin_id,
+          "Template 1",
+          true,
+          weekRange.startDate,
+          weekRange.endDate
+        );
         setTemplates([defaultTemplate]);
         setSelectedTemplate(defaultTemplate);
       } else {
         setTemplates(templatesList);
-        const defaultTemp =
-          templatesList.find((t) => t.is_default) || templatesList[0];
+        const activeTemplate = await templateRepository.getActiveTemplateByDate(
+          adminRow.admin_id,
+          weekRange.startDate
+        );
+        const defaultTemp = activeTemplate || templatesList.find((t) => t.is_default) || templatesList[0];
         setSelectedTemplate(defaultTemp);
       }
     }
@@ -281,6 +305,7 @@ const handlePointerDown = (e, schedule) => {
 
   const handleTriggerScraper = async (triggerId) => {
     if (!selectedTemplate || !admin) return;
+    const weekRange = getCurrentWeekDateRange();
     setScrapingTarget(triggerId);
     try {
       const response = await fetch('http://localhost:5000/api/scrape', {
@@ -289,7 +314,9 @@ const handlePointerDown = (e, schedule) => {
         body: JSON.stringify({
           adminId: admin.admin_id,
           triggerId: triggerId,
-          templateId: selectedTemplate.template_id
+          templateId: selectedTemplate.template_id,
+          startDate: weekRange.startDate,
+          endDate: weekRange.endDate,
         })
       });
       const result = await response.json();
@@ -319,6 +346,16 @@ const handlePointerDown = (e, schedule) => {
           is_scraped_draft: true,
         })
       );
+      const updatedTemplate = await templateRepository.update(selectedTemplate.template_id, {
+        start_date: weekRange.startDate,
+        end_date: weekRange.endDate,
+      });
+      setTemplates((prevTemplates) =>
+        prevTemplates.map((template) =>
+          template.template_id === updatedTemplate.template_id ? updatedTemplate : template
+        )
+      );
+      setSelectedTemplate(updatedTemplate);
       writeDraftSchedules(selectedTemplate.template_id, scrapedDrafts);
       setDraftSchedules(scrapedDrafts);
       alert(`Synchronization finished: ${result.message}`);
@@ -668,13 +705,16 @@ const handlePointerDown = (e, schedule) => {
   // Add template
   const handleAddTemplate = async () => {
     if (!newTemplateName.trim()) return;
+    const weekRange = getCurrentWeekDateRange();
 
     try {
-      const newTemplate = await templateRepository.insert({
-        admin_id: admin.admin_id,
-        name: newTemplateName,
-        is_default: false,
-      });
+      const newTemplate = await templateRepository.createTemplate(
+        admin.admin_id,
+        newTemplateName,
+        false,
+        weekRange.startDate,
+        weekRange.endDate
+      );
 
       setTemplates([...templates, newTemplate]);
       setNewTemplateName("");
@@ -1546,7 +1586,7 @@ const handlePointerDown = (e, schedule) => {
                         style={{ backgroundColor: '#2c3e91', width: '100%', margin: 0 }}
                         onClick={handleApproveAllDrafts}
                       >
-                        ✓ Approve All Staged Drafts
+                        Approve All Staged Drafts
                       </button>
                     </>
                   ) : (

@@ -1,7 +1,6 @@
 import { parishRepository } from '../repositories/parishRepository.js';
 import { scheduleRepository } from '../repositories/scheduleRepository.js';
 import { adminRepository } from '../repositories/adminRepository.js';
-import { updateRepository } from '../repositories/updateRepository.js';
 import { templateRepository } from '../repositories/templateRepository.js';
 import bcrypt from 'bcryptjs';  
 
@@ -70,35 +69,17 @@ export const scheduleCoordinator = {
 
     const newSchedule = await scheduleRepository.insert(schedulePayload);
 
-    await updateRepository.insert({
-      admin_id: adminId,
-      parish_id: parishId,
-      changes: JSON.stringify({ action: 'CREATE', schedule: newSchedule })
-    });
-
     return newSchedule;
   },
 
   async updateSchedule(parishId, adminId, scheduleId, updates) {
     const updatedSchedule = await scheduleRepository.update(scheduleId, updates);
 
-    await updateRepository.insert({
-      admin_id: adminId,
-      parish_id: parishId,
-      changes: JSON.stringify({ action: 'UPDATE', schedule_id: scheduleId, updates })
-    });
-
     return updatedSchedule;
   },
 
   async deleteSchedule(parishId, adminId, scheduleId) {
     await scheduleRepository.delete(scheduleId);
-
-    await updateRepository.insert({
-      admin_id: adminId,
-      parish_id: parishId,
-      changes: JSON.stringify({ action: 'DELETE', schedule_id: scheduleId })
-    });
 
     return { success: true };
   },
@@ -117,16 +98,6 @@ export const scheduleCoordinator = {
 
     const created = await scheduleRepository.saveMany(newSchedules);
 
-    await updateRepository.insert({
-      admin_id: adminId,
-      parish_id: parishId,
-      changes: JSON.stringify({ 
-        action: 'BATCH_UPDATE', 
-        deleted_count: existingSchedules.length,
-        created_count: created.length 
-      })
-    });
-
     return created;
   },
 
@@ -138,12 +109,10 @@ export const scheduleCoordinator = {
 
     const parish = await parishRepository.findById(parishId);
     const schedules = await scheduleRepository.findByParishId(parishId);
-    const updates = await updateRepository.findByParishId(parishId);
 
     return {
       parish,
       schedules,
-      updates: updates.slice(0, 10) 
     };
   },
 
@@ -178,13 +147,6 @@ export const scheduleCoordinator = {
   // Update parish info (admin only)
   async updateParishInfo(parishId, adminId, updates) {
     const updatedParish = await parishRepository.update(parishId, updates);
-
-    // Log the change
-    await updateRepository.insert({
-      admin_id: adminId,
-      parish_id: parishId,
-      changes: JSON.stringify({ action: 'UPDATE_PARISH_INFO', updates })
-    });
 
     return updatedParish;
   }

@@ -13,6 +13,19 @@ export const templateRepository = {
     return data;
   },
 
+  async getActiveTemplateByDate(adminId, targetDate) {
+    const { data, error } = await supabase
+      .from('schedule_templates')
+      .select('*')
+      .eq('admin_id', adminId)
+      .lte('start_date', targetDate)
+      .gte('end_date', targetDate)
+      .maybeSingle();
+
+    if (error) throw error;
+    return data;
+  },
+
   async findById(templateId) {
     const { data, error } = await supabase
       .from('schedule_templates')
@@ -24,15 +37,31 @@ export const templateRepository = {
     return data;
   },
 
-  async insert(template) {
+  async createTemplate(adminId, name, isDefault, startDate = null, endDate = null) {
     const { data, error } = await supabase
       .from('schedule_templates')
-      .insert([template])
+      .insert([{ 
+        admin_id: adminId,
+        name,
+        is_default: isDefault,
+        start_date: startDate,
+        end_date: endDate,
+      }])
       .select()
       .single();
     
     if (error) throw error;
     return data;
+  },
+
+  async insert(template) {
+    return this.createTemplate(
+      template.admin_id,
+      template.name,
+      template.is_default,
+      template.start_date ?? template.startDate ?? null,
+      template.end_date ?? template.endDate ?? null,
+    );
   },
 
   async update(templateId, updates) {
