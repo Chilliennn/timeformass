@@ -523,7 +523,7 @@ const handlePointerDown = (e, schedule) => {
       console.error("Failed to approve all staged drafts:", error);
     }
   };
-  
+
   const handleDragScheduleStart = (e, schedule) => {
     if (resizingSchedule || placingMassType) return;
 
@@ -1445,7 +1445,7 @@ const handlePointerDown = (e, schedule) => {
             {admin.admin_id === 1 && (
               <div className="mass-types-section" style={{ marginTop: '0.2rem', border: '2px solid rgba(44, 62, 145, 0.12)' }}>
                 <div className="mass-types-header">
-                  <h3 style={{ color: '#2c3e91' }}>⚡ Target Site Synchronizations</h3>
+                  <h3 style={{ color: '#2c3e91' }}>Target Site Synchronizations</h3>
                 </div>
                 <p style={{ fontSize: '0.8rem', color: '#666666', margin: '0.5rem 0 1rem 0', lineHeigh: '1.4' }}>
                   Trigger independent web scripts to collect mass schedule listings.
@@ -1457,7 +1457,7 @@ const handlePointerDown = (e, schedule) => {
                     disabled={scrapingTarget !== null}
                     onClick={() => handleTriggerScraper('st_john_btn')}
                   >
-                    {scrapingTarget === 'st_john_btn' ? '⏳ Syncing St. John...' : 'Sync St. John Cathedral'}
+                    {scrapingTarget === 'st_john_btn' ? 'Syncing St. John...' : 'Sync St. John Cathedral'}
                   </button>
                   <button 
                     className="btn-add-template" 
@@ -1465,7 +1465,7 @@ const handlePointerDown = (e, schedule) => {
                     disabled={scrapingTarget !== null}
                     onClick={() => handleTriggerScraper('holy_rosary_btn')}
                   >
-                    {scrapingTarget === 'holy_rosary_btn' ? '⏳ Syncing Holy Rosary...' : 'Sync Holy Rosary Church'}
+                    {scrapingTarget === 'holy_rosary_btn' ? 'Syncing Holy Rosary...' : 'Sync Holy Rosary Church'}
                   </button>
                 </div>
                                 <div style={{ marginTop: '0.9rem', paddingTop: '0.8rem', borderTop: '1px solid rgba(44, 62, 145, 0.12)' }}>
