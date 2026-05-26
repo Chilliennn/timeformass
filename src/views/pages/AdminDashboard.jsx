@@ -929,7 +929,7 @@ const handlePointerDown = (e, schedule) => {
     navigate("/");
   };
 
-  const renderScheduleBlock = (schedule) => {
+  const renderScheduleBlock = (schedule, alignment = { left: "0%", width: "100%" }) => {
     const startMinutes = timeStringToMinutesFromStart(schedule.start_time);
     const endMinutes = timeStringToMinutesFromStart(schedule.end_time);
     const durationMinutes = Math.max(MINUTE_STEP, endMinutes - startMinutes);
@@ -949,6 +949,8 @@ const handlePointerDown = (e, schedule) => {
           height: `${Math.max(28, heightPx - 3)}px`,
           backgroundColor: schedule.mass_types?.color || "#2C3E91",
           cursor: isDragging ? "grabbing" : "grab",
+          left: alignment.left,
+          width: `calc(${alignment.width} - 4px)`,
         }}
         onMouseDown={(e) => handlePointerDown(e, schedule)}
         onMouseMove={(e) => handlePointerMove(e, schedule)}
@@ -1022,7 +1024,7 @@ const handlePointerDown = (e, schedule) => {
     );
   };
 
-  const renderDraftBlock = (schedule) => {
+  const renderDraftBlock = (schedule, alignment = { left: "0%", width: "100%" }) => {
     const startMinutes = timeStringToMinutesFromStart(schedule.start_time);
     const endMinutes = timeStringToMinutesFromStart(schedule.end_time);
     const durationMinutes = Math.max(MINUTE_STEP, endMinutes - startMinutes);
@@ -1043,8 +1045,8 @@ const handlePointerDown = (e, schedule) => {
           boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.6)",
           color: "#2c3e91",
           zIndex: 5,
-          marginLeft: "4px",
-          width: "calc(100% - 8px)",
+          left: alignment.left,
+          width: `calc(${alignment.width} - 4px)`,
           cursor: "pointer",
         }}
         onClick={() => setViewSchedule(schedule)}
@@ -1099,6 +1101,53 @@ const handlePointerDown = (e, schedule) => {
   };
 
   if (!admin || !parish) return <div className="loading-admin">Loading...</div>;
+
+  const timeToMinutes = (timeStr) => timeStringToMinutesFromStart(timeStr);
+
+  const detectOverlapsAndGroup = (daySchedules) => {
+    const groups = [];
+    const sorted = [...daySchedules].sort((a, b) => timeToMinutes(a.start_time) - timeToMinutes(b.start_time));
+
+    sorted.forEach(sch => {
+      let placed = false;
+      for (let group of groups) {
+        const hasOverlap = group.some(item => {
+          const startA = timeToMinutes(sch.start_time);
+          const endA = timeToMinutes(sch.end_time);
+          const startB = timeToMinutes(item.start_time);
+          const endB = timeToMinutes(item.end_time);
+          return startA < endB && startB < endA;
+        });
+
+        if (hasOverlap) {
+          group.push(sch);
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        groups.push([sch]);
+      }
+    });
+
+    const scheduleMap = new Map();
+    groups.forEach(group => {
+      const draftItems = group.filter(s => s.is_scraped_draft);
+      group.forEach(sch => {
+        if (sch.is_scraped_draft) {
+          scheduleMap.set(sch.template_schedule_id, { left: '50%', width: '50%' });
+        } else {
+          if (draftItems.length > 0) {
+            scheduleMap.set(sch.template_schedule_id, { left: '0%', width: '50%' });
+          } else {
+            scheduleMap.set(sch.template_schedule_id, { left: '0%', width: '100%' });
+          }
+        }
+      });
+    });
+
+    return scheduleMap;
+  };
 
   return (
     <div className="admin-dashboard">
@@ -1301,6 +1350,8 @@ const handlePointerDown = (e, schedule) => {
                     const dayDraftSchedules = draftSchedules.filter(
                       (s) => s.day_of_week === dbDay
                     );
+                    const dayItems = [...daySchedules, ...dayDraftSchedules];
+                    const alignmentMap = detectOverlapsAndGroup(dayItems);
 
                     return (
                       <div key={dayIndex} className="day-column">
@@ -1323,8 +1374,13 @@ const handlePointerDown = (e, schedule) => {
                             />
                           ))}
 
-                          {daySchedules.map(renderScheduleBlock)}
-                          {dayDraftSchedules.map(renderDraftBlock)}
+                          {dayItems.map((s) => {
+                            const alignment = alignmentMap.get(s.template_schedule_id) || { left: '0%', width: '100%' };
+
+                            return s.is_scraped_draft
+                              ? renderDraftBlock(s, alignment)
+                              : renderScheduleBlock(s, alignment);
+                          })}
                         </div>
                       </div>
                     );
