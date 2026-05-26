@@ -64,6 +64,7 @@ function AdminDashboard() {
   const [editingSchedule, setEditingSchedule] = useState(null);
   const [viewSchedule, setViewSchedule] = useState(null);
   const [pendingDeleteSchedule, setPendingDeleteSchedule] = useState(null);
+  const [showClearDraftsConfirm, setShowClearDraftsConfirm] = useState(false);
   const [editStartTime, setEditStartTime] = useState("");
   const [editEndTime, setEditEndTime] = useState("");
   const [editLanguage, setEditLanguage] = useState("");
@@ -558,6 +559,29 @@ const handlePointerDown = (e, schedule) => {
       }, 2000);
     } catch (error) {
       console.error("Failed to approve all staged drafts:", error);
+    }
+  };
+
+  const handleClearAllDrafts = async () => {
+    if (!selectedTemplate) return;
+
+    try {
+      const templateId = selectedTemplate.template_id;
+      await templateRepository.deleteDraftSchedules(templateId);
+      writeDraftSchedules(templateId, []);
+      setDraftSchedules([]);
+      await refreshTemplateSchedules(templateId);
+      setShowSavedMessage(true);
+      if (savedMessageTimeoutRef.current) {
+        clearTimeout(savedMessageTimeoutRef.current);
+      }
+      savedMessageTimeoutRef.current = setTimeout(() => {
+        setShowSavedMessage(false);
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to clear staged drafts:", error);
+    } finally {
+      setShowClearDraftsConfirm(false);
     }
   };
 
@@ -1588,6 +1612,13 @@ const handlePointerDown = (e, schedule) => {
                       >
                         Approve All Staged Drafts
                       </button>
+                      <button
+                        className="btn-add-template"
+                        style={{ backgroundColor: '#b03a2e', width: '100%', marginTop: '0.6rem' }}
+                        onClick={() => setShowClearDraftsConfirm(true)}
+                      >
+                        Remove All Staged Drafts
+                      </button>
                     </>
                   ) : (
                     <div style={{ fontSize: '0.8rem', color: '#777', lineHeight: '1.4' }}>
@@ -1906,6 +1937,31 @@ const handlePointerDown = (e, schedule) => {
               </button>
               <button className="btn-primary" onClick={confirmDeleteSchedule}>
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showClearDraftsConfirm && (
+        <div className="modal-overlay" onClick={() => setShowClearDraftsConfirm(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h3>Remove All Staged Drafts?</h3>
+            <div className="form-group">
+              <div className="form-value">
+                This will permanently remove every staged draft for the selected template.
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="btn-cancel"
+                onClick={() => setShowClearDraftsConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button className="btn-primary" onClick={handleClearAllDrafts}>
+                Remove All
               </button>
             </div>
           </div>
