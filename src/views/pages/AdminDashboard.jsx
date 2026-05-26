@@ -1132,12 +1132,19 @@ const handlePointerDown = (e, schedule) => {
 
     const scheduleMap = new Map();
     groups.forEach(group => {
+      const liveItems = group.filter(s => !s.is_scraped_draft);
       const draftItems = group.filter(s => s.is_scraped_draft);
+      const hasRealCollision = liveItems.length > 0 && draftItems.length > 0;
+
       group.forEach(sch => {
         if (sch.is_scraped_draft) {
-          scheduleMap.set(sch.template_schedule_id, { left: '50%', width: '50%' });
+          if (hasRealCollision) {
+            scheduleMap.set(sch.template_schedule_id, { left: '50%', width: '50%' });
+          } else {
+            scheduleMap.set(sch.template_schedule_id, { left: '0%', width: '100%' });
+          }
         } else {
-          if (draftItems.length > 0) {
+          if (hasRealCollision) {
             scheduleMap.set(sch.template_schedule_id, { left: '0%', width: '50%' });
           } else {
             scheduleMap.set(sch.template_schedule_id, { left: '0%', width: '100%' });
@@ -1784,6 +1791,39 @@ const handlePointerDown = (e, schedule) => {
                 <div className="form-value">{viewSchedule.bulletin_file_name}</div>
               </div>
             )}
+
+            <div className="form-group">
+              <label className="form-label">Linked Schedules</label>
+              <div className="form-value" style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                {(() => {
+                  const activeSlotSchedules = [...schedules, ...draftSchedules].filter((schedule) => {
+                    if (!viewSchedule) return false;
+                    if (schedule.day_of_week !== viewSchedule.day_of_week) return false;
+
+                    const startA = timeToMinutes(schedule.start_time);
+                    const endA = timeToMinutes(schedule.end_time);
+                    const startB = timeToMinutes(viewSchedule.start_time);
+                    const endB = timeToMinutes(viewSchedule.end_time);
+
+                    return startA < endB && startB < endA;
+                  });
+
+                  return activeSlotSchedules.length > 0 ? (
+                    activeSlotSchedules.map((schedule) => (
+                      <div
+                        key={`${schedule.is_scraped_draft ? "draft" : "live"}-${schedule.template_schedule_id}`}
+                        style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem" }}
+                      >
+                        <span>{schedule.mass_types?.name || "(unspecified)"}</span>
+                        <span>{schedule.is_scraped_draft ? "Draft" : "Live"}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div>(no linked schedules in this time slot)</div>
+                  );
+                })()}
+              </div>
+            </div>
 
             <div className="modal-actions">
               <button
