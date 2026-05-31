@@ -44,9 +44,12 @@ def main():
 
 	engine = engine_class()
 	result = engine.scrape()
-	start_date, end_date = _extract_date_range_from_bulletin_file_name(
-		result.get("bulletin_file_name")
-	)
+	start_date = result.get("start_date")
+	end_date = result.get("end_date")
+	if not start_date or not end_date:
+		start_date, end_date = _extract_date_range_from_bulletin_file_name(
+			result.get("bulletin_file_name")
+		)
 
 	payload = {
 		"trigger_id": trigger_id,

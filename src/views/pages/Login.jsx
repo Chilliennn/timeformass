@@ -62,7 +62,7 @@ function Login() {
           </button>
 
           <h1 className="login-title">Welcome back!</h1>
-          <p className="login-subtitle">Enter your Credentials to access your account</p>
+          <p className="login-subtitle">Enter your credentials to access your account</p>
 
           <form onSubmit={handleSubmit} className="login-form">
             <div className="form-group">

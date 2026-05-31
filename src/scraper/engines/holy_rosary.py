@@ -83,6 +83,7 @@ class HolyRosaryEngine(BaseEngine):
 			doc = fitz.open(stream=pdf_bytes, filetype="pdf")
 			try:
 				pdf_text = self._extract_mass_section_text(doc)
+				start_date, end_date = self._extract_bulletin_date_range(pdf_text)
 			finally:
 				doc.close()
 		except Exception as exc:
@@ -97,6 +98,8 @@ class HolyRosaryEngine(BaseEngine):
 			"source": "Holy Rosary Church",
 			"bulletin_file_name": bulletin_link["file_name"],
 			"bulletin_pdf_url": bulletin_link["pdf_url"],
+			"start_date": start_date,
+			"end_date": end_date,
 			"schedules": schedules,
 		}
 
@@ -428,3 +431,33 @@ class HolyRosaryEngine(BaseEngine):
 			return match.group(0).strip() if canonical_label is None else canonical_label
 
 		return ""
+
+	def _extract_bulletin_date_range(self, pdf_text):
+		if not pdf_text:
+			return None, None
+
+		date_patterns = (
+			re.compile(
+				r"(?P<weekday>Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*(?P<day>\d{1,2}(?:st|nd|rd|th)?)\s+(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+(?P<year>\d{4})",
+				re.IGNORECASE,
+			),
+			re.compile(
+				r"(?P<day>\d{1,2}(?:st|nd|rd|th)?)\s+(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+(?P<year>\d{4})",
+				re.IGNORECASE,
+			),
+		)
+
+		lines = [line.strip() for line in pdf_text.replace("\r", "\n").splitlines() if line.strip()]
+		for line in lines[:12]:
+			for pattern in date_patterns:
+				match = pattern.search(line)
+				if not match:
+					continue
+
+				day_text = re.sub(r"(st|nd|rd|th)$", "", match.group("day"), flags=re.IGNORECASE)
+				month_text = match.group("month")
+				year_text = match.group("year")
+				parsed = datetime.strptime(f"{day_text} {month_text} {year_text}", "%d %B %Y")
+				return parsed.strftime("%Y-%m-%d"), (parsed + timedelta(days=6)).strftime("%Y-%m-%d")
+
+		return None, None

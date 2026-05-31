@@ -5,10 +5,11 @@ import re
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
 
-import google.generativeai as genai
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
+from google import genai
+from google.genai import types
 
 from engines.base_engine import BaseEngine
 
@@ -49,42 +50,26 @@ class StJohnEngine(BaseEngine):
 			raise RuntimeError("[gemini_api_key] GEMINI_API_KEY is missing from environment.")
 
 		try:
-			genai.configure(api_key=api_key)
+			client = genai.Client(api_key=api_key)
 			model_name = "gemini-2.5-flash"
-			model = genai.GenerativeModel(model_name)
 			prompt = self._vision_prompt()
 			try:
-				response = model.generate_content(
-					[prompt, vision_image],
-					generation_config={"response_mime_type": "application/json"},
+				response = client.models.generate_content(
+					model=model_name,
+					contents=[prompt, vision_image],
+					config=types.GenerateContentConfig(response_mime_type="application/json"),
 				)
 			except Exception as gen_exc:
-				model_list_info = None
+				model_list_info = []
 				try:
-					if hasattr(genai, "list_models"):
-						model_list_info = genai.list_models()
-					elif hasattr(genai, "models") and hasattr(genai.models, "list"):
-						model_list_info = genai.models.list()
-					elif hasattr(genai, "Model") and hasattr(genai.Model, "list"):
-						model_list_info = genai.Model.list()
+					for model in client.models.list():
+						model_list_info.append(getattr(model, "name", str(model)))
 				except Exception:
-					model_list_info = None
+					model_list_info = []
 
 				diagnostic = str(gen_exc)
-				if model_list_info is not None:
-					try:
-						if isinstance(model_list_info, (list, tuple)):
-							names = [str(m) for m in model_list_info]
-						else:
-							names = []
-							for candidate in getattr(model_list_info, "models", []) or model_list_info:
-								try:
-									names.append(getattr(candidate, "name", str(candidate)))
-								except Exception:
-									names.append(str(candidate))
-						diagnostic += f" | available_models={names}"
-					except Exception:
-						diagnostic += " | (failed to serialize model list)"
+				if model_list_info:
+					diagnostic += f" | available_models={model_list_info}"
 
 				raise RuntimeError(f"[vision_extract_schedule] generate_content failed: {diagnostic}") from gen_exc
 
