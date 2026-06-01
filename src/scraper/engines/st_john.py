@@ -158,8 +158,7 @@ class StJohnEngine(BaseEngine):
 		return schedules
 
 	def _normalize_schedules(self, schedules):
-		normalized = []
-		seen = set()
+		groups = {}
 
 		for item in schedules:
 			if not isinstance(item, dict):
@@ -178,30 +177,40 @@ class StJohnEngine(BaseEngine):
 				end_time = self._plus_one_hour(start_time)
 
 			language = str(item.get("language") or "English").strip() or "English"
-			notes = str(item.get("notes") or "").strip()
+			notes_raw = str(item.get("notes") or "").strip()
+			notes_norm = re.sub(r"^[\*\u2022\-\s]+", "", notes_raw)
+			notes_norm = re.sub(r"\s+", " ", notes_norm).strip()
 
-			signature = (
-				day_of_week,
-				start_time,
-				end_time,
-				language.lower(),
-				notes.lower(),
-			)
-			if signature in seen:
-				continue
-			seen.add(signature)
-
-			normalized.append(
-				{
+			key = (day_of_week, start_time, end_time, language.lower())
+			if key not in groups:
+				groups[key] = {
 					"day_of_week": day_of_week,
 					"start_time": start_time,
 					"end_time": end_time,
 					"language": language,
-					"notes": notes,
+					"notes_set": set(),
+				}
+
+			if notes_norm:
+				groups[key]["notes_set"].add(notes_norm)
+
+		result = []
+		for (day, start, end, _lang) in sorted(groups.keys(), key=lambda k: (k[0], k[1])):
+			entry = groups[(day, start, end, _lang)]
+			notes_combined = "".join(sorted(entry["notes_set"])) if entry["notes_set"] else ""
+			if notes_combined:
+				notes_combined = "; ".join(sorted(entry["notes_set"]))
+			result.append(
+				{
+					"day_of_week": entry["day_of_week"],
+					"start_time": entry["start_time"],
+					"end_time": entry["end_time"],
+					"language": entry["language"],
+					"notes": notes_combined,
 				}
 			)
 
-		return normalized
+		return result
 
 	def _normalize_day(self, value):
 		try:
