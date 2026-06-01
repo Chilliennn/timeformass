@@ -28,12 +28,14 @@ def main():
 	template_id = sys.argv[2] if len(sys.argv) > 2 else None
 
 	try:
+		from engines.assumption_pj import AssumptionPjEngine
 		from engines.holy_rosary import HolyRosaryEngine
 		from engines.st_john import StJohnEngine
 	except Exception as error:
 		raise RuntimeError(f"[bootstrap_python_import] {error}") from error
 
 	engine_registry = {
+		"assumption_pj_btn": AssumptionPjEngine,
 		"holy_rosary_btn": HolyRosaryEngine,
 		"st_john_btn": StJohnEngine,
 	}

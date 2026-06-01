@@ -1499,6 +1499,14 @@ const handlePointerDown = (e, schedule) => {
                   >
                     {scrapingTarget === 'holy_rosary_btn' ? 'Syncing Holy Rosary...' : 'Sync Holy Rosary Church'}
                   </button>
+                  <button 
+                    className="btn-add-template" 
+                    style={{ backgroundColor: '#d4af37', width: '100%', margin: 0 }}
+                    disabled={scrapingTarget !== null}
+                    onClick={() => handleTriggerScraper('assumption_pj_btn')}
+                  >
+                    {scrapingTarget === 'assumption_pj_btn' ? 'Syncing Assumption...' : 'Sync Assumption Church'}
+                  </button>
                 </div>
                 <div style={{ marginTop: '0.9rem', paddingTop: '0.8rem', borderTop: '1px solid rgba(44, 62, 145, 0.12)' }}>
                   <div className="mass-types-header" style={{ marginBottom: '0.45rem' }}>
