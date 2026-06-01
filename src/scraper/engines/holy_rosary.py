@@ -191,6 +191,7 @@ class HolyRosaryEngine(BaseEngine):
 	def _parse_schedule_text(self, pdf_text):
 		normalized_text = pdf_text.replace("\r", "\n")
 		lines = [line.strip() for line in normalized_text.splitlines() if line.strip()]
+		bulletin_season = self._extract_bulletin_season_context(normalized_text)
 
 		sections = []
 		current_language = None
@@ -212,11 +213,11 @@ class HolyRosaryEngine(BaseEngine):
 
 		schedules = []
 		for section_language, section_text in sections:
-			schedules.extend(self._parse_section(section_text, section_language))
+			schedules.extend(self._parse_section(section_text, section_language, bulletin_season))
 
 		return self._dedupe_schedules(schedules)
 
-	def _parse_section(self, section_text, default_language):
+	def _parse_section(self, section_text, default_language, bulletin_season=None):
 		compact_text = re.sub(r"\s+", " ", section_text).strip()
 		day_matches = list(self.DAY_PATTERN.finditer(compact_text))
 		if not day_matches:
@@ -233,7 +234,7 @@ class HolyRosaryEngine(BaseEngine):
 				continue
 
 			day_name = day_match.group("day")
-			season_notes = self._extract_notes(chunk, day_name, None, None)
+			season_notes = self._extract_notes(chunk, day_name, None, None, bulletin_season)
 
 			if len(time_matches) == 1 or self._looks_like_time_range(time_matches):
 				start_raw = time_matches[0].group("start")
@@ -366,11 +367,19 @@ class HolyRosaryEngine(BaseEngine):
 		bumped = parsed + timedelta(hours=1)
 		return bumped.strftime("%H:%M:%S")
 
-	def _extract_notes(self, chunk, day_name, start_raw, end_raw):
+	def _extract_notes(self, chunk, day_name, start_raw, end_raw, bulletin_season=None):
 		season = self._extract_liturgical_season(chunk)
 		if not season:
 			return ""
-		return season
+
+		bulletin_season = bulletin_season if bulletin_season is not None else getattr(self, "_bulletin_season_context", None)
+		if bulletin_season is None:
+			return season
+
+		if self._seasons_are_compatible(bulletin_season, season):
+			return season
+
+		return bulletin_season
 
 	def _infer_language_for_time_segment(self, chunk, time_matches, time_index, default_language):
 		segment_start = time_matches[time_index].start()
@@ -431,6 +440,44 @@ class HolyRosaryEngine(BaseEngine):
 			return match.group(0).strip() if canonical_label is None else canonical_label
 
 		return ""
+
+	def _extract_bulletin_season_context(self, pdf_text):
+		lines = [line.strip() for line in (pdf_text or "").replace("\r", "\n").splitlines() if line.strip()]
+		for line in lines[:20]:
+			season = self._extract_liturgical_season(line)
+			if season:
+				self._bulletin_season_context = season
+				return season
+
+		self._bulletin_season_context = None
+		return None
+
+	def _seasons_are_compatible(self, baseline, candidate):
+		baseline_week = self._extract_ordinary_time_week_number(baseline)
+		candidate_week = self._extract_ordinary_time_week_number(candidate)
+
+		if baseline_week is not None and candidate_week is not None:
+			return baseline_week == candidate_week
+
+		if baseline and candidate:
+			baseline_normalized = re.sub(r"\s+", " ", baseline).strip().lower()
+			candidate_normalized = re.sub(r"\s+", " ", candidate).strip().lower()
+			return baseline_normalized == candidate_normalized
+
+		return True
+
+	def _extract_ordinary_time_week_number(self, season_text):
+		if not season_text:
+			return None
+
+		match = re.search(r"\b(?P<week>\d+)(?:st|nd|rd|th)?\s+Week\s+(?:in|of)\s+Ordinary\s+Time\b", season_text, re.IGNORECASE)
+		if not match:
+			return None
+
+		try:
+			return int(match.group("week"))
+		except (TypeError, ValueError):
+			return None
 
 	def _extract_bulletin_date_range(self, pdf_text):
 		if not pdf_text:
