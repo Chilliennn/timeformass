@@ -1501,6 +1501,14 @@ const handlePointerDown = (e, schedule) => {
                   </button>
                   <button 
                     className="btn-add-template" 
+                    style={{ backgroundColor: '#8c4b2d', width: '100%', margin: 0 }}
+                    disabled={scrapingTarget !== null}
+                    onClick={() => handleTriggerScraper('ofkl')}
+                  >
+                    {scrapingTarget === 'ofkl' ? 'Syncing OFKL...' : 'Sync Church of Our Lady of Fatima (OFKL)'}
+                  </button>
+                  <button 
+                    className="btn-add-template" 
                     style={{ backgroundColor: '#d4af37', width: '100%', margin: 0 }}
                     disabled={scrapingTarget !== null}
                     onClick={() => handleTriggerScraper('assumption_pj_btn')}
