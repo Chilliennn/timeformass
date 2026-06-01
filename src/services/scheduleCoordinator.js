@@ -24,26 +24,22 @@ export const scheduleCoordinator = {
   },
 
   async getSchedulesForDay(parishId, dayOfWeek) {
-  const admins = await adminRepository.findByParishId(parishId);
-  const admin = Array.isArray(admins) ? admins[0] : admins;
-  if (!admin) return [];
+    const templates = await templateRepository.findByAdminId(parishId);
+    const defaultTemplate = (templates || []).find(t => t.is_default) || (templates && templates[0]);
+    if (!defaultTemplate) return [];
 
-  const templates = await templateRepository.findByAdminId(admin.admin_id);
-  const defaultTemplate = (templates || []).find(t => t.is_default) || (templates && templates[0]);
-  if (!defaultTemplate) return [];
-
-  const allSchedules = await templateRepository.getTemplateSchedules(defaultTemplate.template_id);
-  
-  const daySchedules = (allSchedules || []).filter(s => s.day_of_week === dayOfWeek);
-  
-  return daySchedules.map(s => ({
-    ...s,
-    time: s.start_time,
-    type: s.mass_types?.name || '',
-    language: s.language || '',
-    notes: s.notes || ''
-  }));
-},
+    const allSchedules = await templateRepository.getTemplateSchedules(defaultTemplate.template_id);
+    
+    const daySchedules = (allSchedules || []).filter(s => s.day_of_week === dayOfWeek);
+    
+    return daySchedules.map(s => ({
+      ...s,
+      time: s.start_time,
+      type: s.mass_types?.name || '',
+      language: s.language || '',
+      notes: s.notes || ''
+    }));
+  },
 
   async authenticateAdmin(email, passwordPlain) {
     const admin = await adminRepository.findByEmail(email);
@@ -68,19 +64,16 @@ export const scheduleCoordinator = {
     };
 
     const newSchedule = await scheduleRepository.insert(schedulePayload);
-
     return newSchedule;
   },
 
   async updateSchedule(parishId, adminId, scheduleId, updates) {
     const updatedSchedule = await scheduleRepository.update(scheduleId, updates);
-
     return updatedSchedule;
   },
 
   async deleteSchedule(parishId, adminId, scheduleId) {
     await scheduleRepository.delete(scheduleId);
-
     return { success: true };
   },
 
@@ -97,7 +90,6 @@ export const scheduleCoordinator = {
     }));
 
     const created = await scheduleRepository.saveMany(newSchedules);
-
     return created;
   },
 
@@ -118,22 +110,16 @@ export const scheduleCoordinator = {
 
   async getActiveSchedules() {
     const parishes = await parishRepository.findAll();
-
     const allSchedules = [];
 
     for (const parish of parishes) {
-      const admins = await adminRepository.findByParishId(parish.parish_id);
-      const admin = Array.isArray(admins) ? admins[0] : admins;
-      if (!admin) continue;
-
-      const templates = await templateRepository.findByAdminId(admin.admin_id);
+      const templates = await templateRepository.findByAdminId(parish.parish_id);
       const defaultTemplate = (templates || []).find(t => t.is_default) || (templates && templates[0]);
       if (!defaultTemplate) continue;
 
       const schedules = await templateRepository.getTemplateSchedules(defaultTemplate.template_id);
       if (!schedules || schedules.length === 0) continue;
 
-      // 5) attach parish info and collect
       allSchedules.push(...schedules.map(s => ({
         ...s,
         parish_name: parish.name,
@@ -144,10 +130,8 @@ export const scheduleCoordinator = {
     return allSchedules;
   },
 
-  // Update parish info (admin only)
   async updateParishInfo(parishId, adminId, updates) {
     const updatedParish = await parishRepository.update(parishId, updates);
-
     return updatedParish;
   }
 };

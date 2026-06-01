@@ -1,11 +1,11 @@
 import { supabase } from '../lib/supabaseClient.js';
 
 export const templateRepository = {
-  async findByAdminId(adminId) {
+  async findByAdminId(parishId) {
     const { data, error } = await supabase
       .from('schedule_templates')
       .select('*')
-      .eq('admin_id', adminId)
+      .eq('parish_id', parishId)
       .order('is_default', { ascending: false })
       .order('name');
     
@@ -13,11 +13,11 @@ export const templateRepository = {
     return data;
   },
 
-  async getActiveTemplateByDate(adminId, targetDate) {
+  async getActiveTemplateByDate(parishId, targetDate) {
     const { data, error } = await supabase
       .from('schedule_templates')
       .select('*')
-      .eq('admin_id', adminId)
+      .eq('parish_id', parishId)
       .lte('start_date', targetDate)
       .gte('end_date', targetDate)
       .maybeSingle();
@@ -37,11 +37,11 @@ export const templateRepository = {
     return data;
   },
 
-  async createTemplate(adminId, name, isDefault, startDate = null, endDate = null) {
+  async createTemplate(parishId, name, isDefault, startDate = null, endDate = null) {
     const { data, error } = await supabase
       .from('schedule_templates')
       .insert([{ 
-        admin_id: adminId,
+        parish_id: parishId,
         name,
         is_default: isDefault,
         start_date: startDate,
@@ -56,7 +56,7 @@ export const templateRepository = {
 
   async insert(template) {
     return this.createTemplate(
-      template.admin_id,
+      template.parish_id ?? template.parish_id,
       template.name,
       template.is_default,
       template.start_date ?? template.startDate ?? null,
