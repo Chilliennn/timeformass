@@ -4,13 +4,11 @@ import os
 import re
 from datetime import datetime, timedelta
 from urllib.parse import urljoin
-
 import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 from google import genai
 from google.genai import types
-
 from engines.base_engine import BaseEngine
 
 
@@ -18,6 +16,7 @@ class StJohnEngine(BaseEngine):
 	target_url = "https://www.stjohnkl.com.my/"
 	fallback_page_url = "https://www.stjohnkl.com.my/e-bulletin"
 	source_name = "Cathedral of St John the Evangelist"
+	model_name = "gemini-2.5-flash"
 
 	def scrape(self):
 		page_html = None
@@ -51,27 +50,11 @@ class StJohnEngine(BaseEngine):
 
 		try:
 			client = genai.Client(api_key=api_key)
-			model_name = "gemini-2.5-flash"
-			prompt = self._vision_prompt()
-			try:
-				response = client.models.generate_content(
-					model=model_name,
-					contents=[prompt, vision_image],
-					config=types.GenerateContentConfig(response_mime_type="application/json"),
-				)
-			except Exception as gen_exc:
-				model_list_info = []
-				try:
-					for model in client.models.list():
-						model_list_info.append(getattr(model, "name", str(model)))
-				except Exception:
-					model_list_info = []
-
-				diagnostic = str(gen_exc)
-				if model_list_info:
-					diagnostic += f" | available_models={model_list_info}"
-
-				raise RuntimeError(f"[vision_extract_schedule] generate_content failed: {diagnostic}") from gen_exc
+			response = self._generate_content_with_retry(
+                client=client,
+                contents=[self._vision_prompt(), vision_image],
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
 
 			raw_text = getattr(response, "text", "") or ""
 			extracted = self._parse_model_output(raw_text)

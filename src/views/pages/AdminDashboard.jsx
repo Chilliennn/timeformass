@@ -1505,7 +1505,7 @@ const handlePointerDown = (e, schedule) => {
                     disabled={scrapingTarget !== null}
                     onClick={() => handleTriggerScraper('ofkl')}
                   >
-                    {scrapingTarget === 'ofkl' ? 'Syncing OFKL...' : 'Sync Church of Our Lady of Fatima (OFKL)'}
+                    {scrapingTarget === 'ofkl' ? 'Syncing OFKL...' : 'Sync Church of Our Lady of Fatima'}
                   </button>
                   <button 
                     className="btn-add-template" 

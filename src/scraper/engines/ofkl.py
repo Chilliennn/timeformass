@@ -1,212 +1,129 @@
+import io
+import os
+import json
 import re
-from collections import OrderedDict
 from datetime import datetime, timedelta
-
 import requests
-from bs4 import BeautifulSoup
-
+from PIL import Image
+from google import genai
+from google.genai import types
 from engines.base_engine import BaseEngine
 
-
 class OfklEngine(BaseEngine):
-	parish_id = "ofkl"
-	target_url = "https://olfkl.com/mass-schedule/"
-	source_name = "Church of Our Lady of Fatima (OFKL)"
+    target_url = "https://olfkl.com/mass-schedule/"
+    source_name = "Church of Our Lady of Fatima (OFKL)"
+    model_name = "gemini-2.5-flash"
 
-	DATE_PATTERN = re.compile(
-		r"(?P<day>\d{1,2})\s+(?P<month>January|February|March|April|May|June|July|August|September|October|November|December)\s+(?P<year>\d{4})\s*\((?P<weekday>Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\)",
-		re.IGNORECASE,
-	)
-	TIME_PATTERN = re.compile(r"(?P<time>\d{1,2}(?::|\.)\d{2}\s*(?:AM|PM|am|pm))")
-	LANGUAGE_MAP = {
-		"english": "English",
-		"tamil": "Tamil",
-		"mandarin": "Mandarin",
-		"malay": "Malay",
-		"bm": "Malay",
-		"chinese": "Chinese",
-	}
+    def scrape(self):
+        bulletin_url = self._get_current_bulletin_url()
+        
+        try:
+            image_response = requests.get(bulletin_url, headers={"User-Agent": self._user_agent()}, timeout=30)
+            image_response.raise_for_status()
+            image_buffer = io.BytesIO(image_response.content)
+            vision_image = Image.open(image_buffer).convert("RGB")
+        except Exception as exc:
+            raise RuntimeError(f"[download_bulletin_image] Failed to fetch {bulletin_url}: {exc}") from exc
 
-	def scrape(self):
-		try:
-			page_html = self._fetch_html(self.target_url)
-			date_groups = self._extract_date_groups(page_html)
-		except Exception as exc:
-			raise RuntimeError(f"[parse_schedule_page] {exc}") from exc
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise RuntimeError("[gemini_api_key] GEMINI_API_KEY is missing from environment.")
 
-		schedules = []
-		for group in date_groups:
-			schedules.extend(group["schedules"])
+        try:
+            client = genai.Client(api_key=api_key)
+            response = self._generate_content_with_retry(
+                client=client,
+                contents=[self._vision_prompt(), vision_image],
+                config=types.GenerateContentConfig(response_mime_type="application/json")
+            )
+            
+            raw_text = getattr(response, "text", "") or ""
+            extracted = self._parse_model_output(raw_text)
+            schedules = self._normalize_schedules(extracted)
+        except Exception as exc:
+            raise RuntimeError(f"[vision_extract_schedule] {exc}") from exc
 
-		return {
-			"source": self.source_name,
-			"parish_id": self.parish_id,
-			"bulletin_page_url": self.target_url,
-			"bulletin_image_url": None,
-			"start_date": None,
-			"end_date": None,
-			"date_groups": date_groups,
-			"schedules": schedules,
-		}
+        return {
+            "source": self.source_name,
+            "bulletin_page_url": self.target_url,
+            "bulletin_image_url": bulletin_url,
+            "start_date": None,
+            "end_date": None,
+            "schedules": schedules,
+        }
 
-	def _fetch_html(self, url):
-		response = requests.get(url, headers={"User-Agent": self._user_agent()}, timeout=30)
-		response.raise_for_status()
-		return BeautifulSoup(response.text, "html.parser")
+    def _get_current_bulletin_url(self):
+        today = datetime.now()
+        idx = (today.weekday() + 1) % 7
+        sun = today - timedelta(days=idx)
+        sat = sun - timedelta(days=1)
+        next_sat = sat + timedelta(days=7)
 
-	def _extract_date_groups(self, soup):
-		container = soup.select_one("main") or soup.select_one("article") or soup.body or soup
-		lines = [line.strip() for line in container.get_text("\n", strip=True).splitlines() if line.strip()]
+        year = sat.strftime("%Y")
+        month_num = sat.strftime("%m")
+        
+        start_day = sat.strftime("%d").lstrip('0')
+        start_month = sat.strftime("%B")
+        
+        end_day = next_sat.strftime("%d").lstrip('0')
+        end_month = next_sat.strftime("%B")
+        
+        start_str = f"{start_day}-{start_month}"
+        end_str = f"{end_day}-{end_month}"
+        
+        return f"https://olfkl.com/wp-content/uploads/{year}/{month_num}/OLF-BULLETIN-{start_str}-{end_str}.jpg"
 
-		date_groups = OrderedDict()
-		current_group = None
+    def _vision_prompt(self):
+        return (
+            "Analyze this Church of Our Lady of Fatima (OLF) bulletin Mass Schedule section.\n\n"
+            "EXTRACTION RULES:\n"
+            "1. Locate the 'MASS SCHEDULE' table.\n"
+            "2. Extract schedules for each date. For multi-day blocks (e.g., 3 June - Wed / 4 June - Thu), "
+            "create separate entries for each day.\n"
+            "3. Map 'day_of_week' (1=Mon, 7=Sun).\n"
+            "4. Convert 'TIME' to 'start_time' (HH:MM:SS 24-hour). Default 'end_time' to 1 hour later.\n"
+            "5. Only extract entries that are 'Mass'. Ignore 'Rosary', 'Novena', 'Holy Hour', or 'Benediction' "
+            "unless they are part of a Mass event (e.g., 'Benediction followed by Mass').\n"
+            "6. Capture language: (E) = English, (T) = Tamil, (M) = Mandarin, (Bilingual) = Bilingual.\n"
+            "7. Notes should contain the Feast/Solemnity name (e.g., 'THE MOST HOLY TRINITY').\n\n"
+            "Return JSON: {\"schedules\": [{\"day_of_week\": int, \"start_time\": \"string\", \"end_time\": \"string\", \"language\": \"string\", \"notes\": \"string\"}]}"
+        )
 
-		for raw_line in lines:
-			line = self._clean_line(raw_line)
-			date_info = self._parse_date_heading(line)
-			if date_info:
-				date_key = date_info["date"].strftime("%Y-%m-%d")
-				current_group = date_groups.setdefault(
-					date_key,
-					{
-						"date": date_key,
-						"day_of_week": date_info["date"].isoweekday(),
-						"heading": line,
-						"schedules": [],
-						"_seen": set(),
-					},
-				)
-				continue
+    def _parse_model_output(self, raw_text):
+        cleaned = re.sub(r"^```json\s*|\s*```$", "", raw_text.strip(), flags=re.IGNORECASE)
+        try:
+            data = json.loads(cleaned)
+            return data.get("schedules", [])
+        except:
+            match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+            return json.loads(match.group(0)) if match else []
 
-			if not current_group:
-				continue
+    def _normalize_schedules(self, schedules):
+        normalized = []
+        for item in schedules:
+            start = self._normalize_time(item.get("start_time"))
+            if not start: continue
+            normalized.append({
+                "day_of_week": int(item.get("day_of_week")),
+                "start_time": start,
+                "end_time": item.get("end_time") or self._plus_one_hour(start),
+                "language": item.get("language") or "English",
+                "notes": item.get("notes") or "Mass"
+            })
+        return normalized
 
-			schedule = self._parse_schedule_line(line, current_group["day_of_week"])
-			if not schedule:
-				continue
+    def _normalize_time(self, t):
+        t = str(t).lower().replace(".", ":")
+        match = re.search(r"(\d{1,2}):(\d{2})\s*(am|pm)?", t)
+        if not match: return None
+        h, m, suffix = int(match.group(1)), int(match.group(2)), match.group(3)
+        if suffix == "pm" and h < 12: h += 12
+        if suffix == "am" and h == 12: h = 0
+        return f"{h:02d}:{m:02d}:00"
 
-			signature = (
-				schedule["day_of_week"],
-				schedule["start_time"],
-				schedule["end_time"],
-				schedule["language"].strip().lower(),
-				schedule["notes"].strip().lower(),
-			)
-			if signature in current_group["_seen"]:
-				continue
+    def _plus_one_hour(self, t):
+        h = (int(t[:2]) + 1) % 24
+        return f"{h:02d}{t[2:]}"
 
-			current_group["_seen"].add(signature)
-			current_group["schedules"].append(schedule)
-
-		result = []
-		for group in sorted(date_groups.values(), key=lambda item: item["date"]):
-			group["schedules"].sort(key=lambda item: item["start_time"])
-			group.pop("_seen", None)
-			result.append(group)
-
-		return result
-
-	def _parse_date_heading(self, line):
-		match = self.DATE_PATTERN.search(line)
-		if not match:
-			return None
-
-		day_text = match.group("day")
-		month_text = match.group("month")
-		year_text = match.group("year")
-		parsed_date = datetime.strptime(f"{day_text} {month_text} {year_text}", "%d %B %Y")
-		return {
-			"date": parsed_date,
-			"weekday": match.group("weekday"),
-		}
-
-	def _parse_schedule_line(self, line, day_of_week):
-		if not line:
-			return None
-
-		line_lower = line.lower()
-		if "mass" not in line_lower:
-			return None
-
-		cleaned_line = self._strip_bullet_prefix(line)
-		time_match = self.TIME_PATTERN.search(cleaned_line)
-		if not time_match:
-			return None
-
-		start_time = self._normalize_time(time_match.group("time"))
-		if not start_time:
-			return None
-
-		remainder = cleaned_line[time_match.end():].strip()
-		remainder = re.sub(r"^[\-–—:]+\s*", "", remainder)
-		notes, language = self._extract_activity_and_language(remainder)
-		if not language:
-			language = "English"
-
-		if not notes:
-			notes = "Mass"
-
-		return {
-			"day_of_week": day_of_week,
-			"start_time": start_time,
-			"end_time": self._plus_one_hour(start_time),
-			"language": language,
-			"notes": notes,
-		}
-
-	def _extract_activity_and_language(self, text):
-		activity = self._strip_trailing_language(text)
-		language = self._extract_language(text)
-		activity = re.sub(r"\s+", " ", activity).strip()
-		activity = activity.strip("-–—: ")
-		return activity, language
-
-	def _extract_language(self, text):
-		match = re.search(r"\((?P<language>[^)]+)\)\s*$", text)
-		if not match:
-			return None
-
-		candidate = re.sub(r"\s+", " ", match.group("language")).strip().lower()
-		return self.LANGUAGE_MAP.get(candidate)
-
-	def _strip_trailing_language(self, text):
-		return re.sub(r"\s*\([^)]*\)\s*$", "", text).strip()
-
-	def _strip_bullet_prefix(self, line):
-		return re.sub(r"^[\s•\u2022\-]+", "", line).strip()
-
-	def _clean_line(self, line):
-		return re.sub(r"\s+", " ", line).strip()
-
-	def _normalize_time(self, time_str):
-		text = str(time_str).strip().lower().replace(".", ":")
-		text = re.sub(r"\s+", "", text)
-		match = re.match(r"^(?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?(?P<suffix>am|pm)?$", text)
-		if not match:
-			return None
-
-		hour = int(match.group("hour"))
-		minute = int(match.group("minute") or 0)
-		suffix = match.group("suffix")
-
-		if suffix:
-			if hour == 12:
-				hour = 0
-			if suffix == "pm":
-				hour += 12
-
-		if hour < 0 or hour > 23 or minute < 0 or minute > 59:
-			return None
-
-		return f"{hour:02d}:{minute:02d}:00"
-
-	def _plus_one_hour(self, time_string):
-		parsed = datetime.strptime(time_string, "%H:%M:%S")
-		return (parsed + timedelta(hours=1)).strftime("%H:%M:%S")
-
-	def _user_agent(self):
-		return (
-			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-			"AppleWebKit/537.36 (KHTML, like Gecko) "
-			"Chrome/124.0.0.0 Safari/537.36"
-		)
+    def _user_agent(self):
+        return "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
