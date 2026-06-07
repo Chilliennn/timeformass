@@ -9,6 +9,13 @@ class BaseEngine(ABC):
         if target_url:
             self.target_url = target_url
 
+    def _user_agent(self):
+        return (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+
     def _generate_content_with_retry(
         self, client, contents, config, max_retries=3, initial_delay=2
     ):
@@ -39,7 +46,7 @@ class BaseEngine(ABC):
                     elif is_503 and current_model != models_to_try[-1]:
                         next_model = models_to_try[i + 1]
                         print(
-                            f"[{self.source_name}] Max retries reached for {current_model}. Falling back to {next_model}..."
+                            f'[{self.source_name}] Max retries reached for {current_model}. Falling back to {next_model}..."\n'
                         )
                         break
                     else:
