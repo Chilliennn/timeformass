@@ -272,7 +272,6 @@ const handlePointerDown = (e, schedule) => {
   const refreshTemplateSchedules = useCallback(async (templateId, targetDate = currentViewDate) => {
     if (!templateId) return;
 
-    // Pull directly from the database and rely on it as the absolute single source of truth
     const scheduleData = await templateRepository.getTemplateSchedulesCombined(
       templateId,
       targetDate
@@ -311,7 +310,7 @@ const handlePointerDown = (e, schedule) => {
     const weekRange = getCurrentWeekDateRange();
     setScrapingTarget(triggerId);
     try {
-      const response = await fetch('http://localhost:5000/api/scrape', {
+      const response = await fetch('http://localhost:3001/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -683,7 +682,7 @@ const handlePointerDown = (e, schedule) => {
       );
 
       setTemplates([...templates, newTemplate]);
-      setNewTemplateName("");
+      newTemplateName("");
       setShowAddTemplate(false);
     } catch (error) {
       console.error("Failed to add template:", error);
@@ -1326,11 +1325,13 @@ const handlePointerDown = (e, schedule) => {
 
                   {currentWeek.map((date, dayIndex) => {
                     const dbDay = date.getDay() === 0 ? 7 : date.getDay();
+                    const columnDbDateString = formatDateForDb(date);
+                    
                     const daySchedules = schedules.filter(
-                      (s) => s.day_of_week === dbDay
+                      (s) => s.day_of_week === dbDay && (!s.date || s.date === columnDbDateString)
                     );
                     const dayDraftSchedules = draftSchedules.filter(
-                      (s) => s.day_of_week === dbDay
+                      (s) => s.day_of_week === dbDay && (!s.date || s.date === columnDbDateString)
                     );
                     const dayItems = [...daySchedules, ...dayDraftSchedules];
                     const alignmentMap = detectOverlapsAndGroup(dayItems);

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /tmp/prev_bulletin.jpg -w '%{http_code}' -H 'User-Agent: Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36' -H 'Referer: https://olfkl.com/' https://olfkl.com/wp-content/uploads/2026/05/OLF-BULLETIN-23-May-30-May.jpg)",
+      "Read(//tmp/**)",
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -H 'User-Agent: Mozilla/5.0' 'https://olfkl.com/wp-json/wp/v2/media?search=OLF-BULLETIN-30-May&per_page=5')",
+      "Bash(curl -s -I -L -H 'User-Agent: Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36' https://olfkl.com/wp-content/uploads/2026/05/OLF-BULLETIN-30-May-6-June.jpg)",
+      "Bash(curl -s -H 'User-Agent: Mozilla/5.0' 'https://olfkl.com/wp-json/wp/v2/media?per_page=100&parent=9102')",
+      "Bash(curl -s -H 'User-Agent: Mozilla/5.0' https://olfkl.com/wp-json/wp/v2/media?slug=olf-bulletin-30-may-6-june)",
+      "Bash(curl -s -o /tmp/test_recent.bin -w '%{http_code}' -H 'User-Agent: Mozilla/5.0 \\(Macintosh; Intel Mac OS X 10_15_7\\) AppleWebKit/537.36' https://olfkl.com/wp-content/uploads/2026/06/26LK7132.jpg)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001/api/scrape)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5000/api/scrape)",
+      "Bash(find /Users/chillien -name \"python3\" -o -name \"python3.*\" 2>/dev/null | head -3 *)",
+      "Read(//Users/chillien/**)"
+    ]
+  }
+}

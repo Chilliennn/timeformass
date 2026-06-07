@@ -37,7 +37,6 @@ class BaseEngine(ABC):
                         time.sleep(delay)
                         delay *= 2
                     elif is_503 and current_model != models_to_try[-1]:
-                        # Dynamic log statement tracking the next model in line
                         next_model = models_to_try[i + 1]
                         print(
                             f"[{self.source_name}] Max retries reached for {current_model}. Falling back to {next_model}..."
