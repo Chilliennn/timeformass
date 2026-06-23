@@ -8,7 +8,6 @@ export const templateRepository = {
       .eq('parish_id', parishId)
       .order('is_default', { ascending: false })
       .order('name');
-    
     if (error) throw error;
     return data;
   },
@@ -18,12 +17,43 @@ export const templateRepository = {
       .from('schedule_templates')
       .select('*')
       .eq('parish_id', parishId)
+      .not('start_date', 'is', null)
+      .not('end_date', 'is', null)
       .lte('start_date', targetDate)
       .gte('end_date', targetDate)
-      .maybeSingle();
+      .order('is_default', { ascending: false })
+      .order('template_id', { ascending: false });
 
     if (error) throw error;
-    return data;
+
+    if (data && data.length > 0) {
+      return data;
+    }
+
+    const { data: nullDateData, error: nullDateError } = await supabase
+      .from('schedule_templates')
+      .select('*')
+      .eq('parish_id', parishId)
+      .is('start_date', null)
+      .is('end_date', null)
+      .order('is_default', { ascending: false })
+      .order('template_id', { ascending: false });
+
+    if (nullDateError) throw nullDateError;
+
+    if (nullDateData && nullDateData.length > 0) {
+      return nullDateData;
+    }
+
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from('schedule_templates')
+      .select('*')
+      .eq('parish_id', parishId)
+      .order('is_default', { ascending: false })
+      .order('template_id', { ascending: false });
+
+    if (fallbackError) throw fallbackError;
+    return fallbackData;
   },
 
   async findById(templateId) {
@@ -31,10 +61,9 @@ export const templateRepository = {
       .from('schedule_templates')
       .select('*')
       .eq('template_id', templateId)
-      .single();
-    
+      .limit(1);
     if (error) throw error;
-    return data;
+    return data && data.length > 0 ? data[0] : null;
   },
 
   async createTemplate(parishId, name, isDefault, startDate = null, endDate = null) {
@@ -48,15 +77,14 @@ export const templateRepository = {
         end_date: endDate,
       }])
       .select()
-      .single();
-    
+      .limit(1);
     if (error) throw error;
-    return data;
+    return data && data.length > 0 ? data[0] : null;
   },
 
   async insert(template) {
     return this.createTemplate(
-      template.parish_id ?? template.parish_id,
+      template.parish_id,
       template.name,
       template.is_default,
       template.start_date ?? template.startDate ?? null,
@@ -70,10 +98,9 @@ export const templateRepository = {
       .update(updates)
       .eq('template_id', templateId)
       .select()
-      .single();
-    
+      .limit(1);
     if (error) throw error;
-    return data;
+    return data && data.length > 0 ? data[0] : null;
   },
 
   async delete(templateId) {
@@ -81,7 +108,6 @@ export const templateRepository = {
       .from('schedule_templates')
       .delete()
       .eq('template_id', templateId);
-    
     if (error) throw error;
   },
 
@@ -89,24 +115,14 @@ export const templateRepository = {
     return this.getTemplateSchedulesCombined(templateId);
   },
 
-  async getTemplateSchedulesCombined(templateId, targetDate = null) {
-    let query = supabase
+  async getTemplateSchedulesCombined(templateId) {
+    const { data, error } = await supabase
       .from('template_schedules')
       .select(`
         *,
-        mass_types (*),
-        schedule_templates!inner (start_date, end_date)
+        mass_types (*)
       `)
       .eq('template_id', templateId);
-
-    if (targetDate) {
-      query = query
-        .lte('schedule_templates.start_date', targetDate)
-        .gte('schedule_templates.end_date', targetDate);
-    }
-
-    const { data, error } = await query;
-
     if (error) throw error;
     return data;
   },
@@ -122,7 +138,6 @@ export const templateRepository = {
       .eq('is_scraped_draft', true)
       .order('day_of_week')
       .order('start_time');
-
     if (error) throw error;
     return data;
   },
@@ -134,7 +149,6 @@ export const templateRepository = {
       .eq('template_id', templateId)
       .eq('is_scraped_draft', true)
       .select();
-
     if (error) throw error;
     return data;
   },
@@ -145,7 +159,6 @@ export const templateRepository = {
       .delete()
       .eq('template_id', templateId)
       .eq('is_scraped_draft', true);
-
     if (error) throw error;
   },
 
@@ -160,16 +173,13 @@ export const templateRepository = {
       notes: schedule.notes ?? null,
       is_scraped_draft: true,
     }));
-
     if (rows.length === 0) {
       return [];
     }
-
     const { data, error } = await supabase
       .from('template_schedules')
       .insert(rows)
       .select();
-
     if (error) throw error;
     return data;
   },
@@ -179,10 +189,9 @@ export const templateRepository = {
       .from('template_schedules')
       .insert([schedule])
       .select()
-      .single();
-    
+      .limit(1);
     if (error) throw error;
-    return data;
+    return data && data.length > 0 ? data[0] : null;
   },
 
   async updateSchedule(scheduleId, updates) {
@@ -191,10 +200,9 @@ export const templateRepository = {
       .update(updates)
       .eq('template_schedule_id', scheduleId)
       .select()
-      .single();
-    
+      .limit(1);
     if (error) throw error;
-    return data;
+    return data && data.length > 0 ? data[0] : null;
   },
 
   async deleteSchedule(scheduleId) {
@@ -202,7 +210,6 @@ export const templateRepository = {
       .from('template_schedules')
       .delete()
       .eq('template_schedule_id', scheduleId);
-    
     if (error) throw error;
   }
 };

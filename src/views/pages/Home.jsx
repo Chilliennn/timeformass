@@ -9,7 +9,7 @@ function Home() {
   const [showFullCalendar, setShowFullCalendar] = useState(false);
   const [schedules, setSchedules] = useState([]);
   const [_parishes, setParishes] = useState([]);
-  const [filter, setFilter] = useState("all"); // 'all', 'am', 'pm'
+  const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
@@ -17,7 +17,6 @@ function Home() {
   const [touchEnd, setTouchEnd] = useState(0);
   const navigate = useNavigate();
 
-  // Check local/session storage for admin metadata
   const checkAdminFromStorage = () => {
     try {
       const sessionAdmin = sessionStorage.getItem("admin");
@@ -30,8 +29,6 @@ function Home() {
 
   useEffect(() => {
     setIsAdminLoggedIn(checkAdminFromStorage());
-
-    // listen for cross-tab login/logout
     const onStorage = (e) => {
       if (e.key === "admin") {
         setIsAdminLoggedIn(checkAdminFromStorage());
@@ -41,56 +38,54 @@ function Home() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Logout (UI-only): clear stored admin metadata and update UI
   const handleLogout = () => {
     try {
       sessionStorage.removeItem("admin");
       localStorage.removeItem("admin");
-      // eslint-disable-next-line no-unused-vars
-    } catch (err) {
-      // ignore
+    } catch (error) {
+      console.error(error);
     }
     setIsAdminLoggedIn(false);
     setMenuOpen(false);
     navigate("/");
   };
 
-  // Fetch parishes and schedules on mount / when selectedDate changes
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
+      console.log("[DEBUG Home.jsx] Starting loadData. Selected Date:", selectedDate.format("YYYY-MM-DD"));
+      
       const parishData = await scheduleCoordinator.getAllParishes();
+      console.log("[DEBUG Home.jsx] Fetched parishes count:", parishData ? parishData.length : 0);
       setParishes(parishData || []);
+      
+      const jsDay = selectedDate.day();
+      const targetDay = jsDay === 0 ? 7 : jsDay;
+      const formattedDate = selectedDate.format("YYYY-MM-DD");
+      
+      console.log(`[DEBUG Home.jsx] Date Day calculation -> jsDay (0=Sun): ${jsDay}, targetDay: ${targetDay}`);
+      
+      const activeSchedules = await scheduleCoordinator.getActiveSchedules(formattedDate);
+      console.log("[DEBUG Home.jsx] Total active schedules fetched from coordinator:", activeSchedules ? activeSchedules.length : 0, activeSchedules);
+      
+      const daySchedules = (activeSchedules || []).filter((s) => {
+        const dbDay = parseInt(s.day_of_week, 10);
+        const match = dbDay === targetDay || (targetDay === 7 && dbDay === 0) || (targetDay === 7 && dbDay === 7);
+        console.log(`[DEBUG Home.jsx] Filtering schedule ID ${s.template_schedule_id}: dbDay=${dbDay} vs targetDay=${targetDay} -> Match: ${match}`);
+        return match;
+      });
 
-      // Get day of week (convert Sunday from 0 to 7 for database)
-      const dayOfWeek = selectedDate.day() === 0 ? 7 : selectedDate.day();
+      console.log("[DEBUG Home.jsx] Schedules after day filtering:", daySchedules.length, daySchedules);
 
-      const allSchedules = [];
-      for (const parish of parishData || []) {
-        const parishSchedules = await scheduleCoordinator.getSchedulesForDay(
-          parish.parish_id,
-          dayOfWeek
-        );
-
-        const schedulesWithParish = (parishSchedules || []).map((schedule) => ({
-          ...schedule,
-          parish_name: parish.name,
-          parish_location_url: parish.location_url,
-        }));
-
-        allSchedules.push(...schedulesWithParish);
-      }
-
-      // Sort by start_time
-      allSchedules.sort((a, b) => {
-        const timeA = a.start_time || a.time || "00:00";
-        const timeB = b.start_time || b.time || "00:00";
+      daySchedules.sort((a, b) => {
+        const timeA = a.start_time || "00:00";
+        const timeB = b.start_time || "00:00";
         return timeA.localeCompare(timeB);
       });
 
-      setSchedules(allSchedules);
+      setSchedules(daySchedules);
     } catch (error) {
-      console.error("Error loading data:", error);
+      console.error("[DEBUG Home.jsx] Error detected in loadData loop:", error);
     } finally {
       setLoading(false);
     }
@@ -100,11 +95,10 @@ function Home() {
     loadData();
   }, [loadData]);
 
-  // Helpers
   const getFilteredSchedules = () => {
     if (filter === "all") return schedules;
     return schedules.filter((schedule) => {
-      const time = schedule.start_time || schedule.time || "00:00";
+      const time = schedule.start_time || "00:00";
       const hour = parseInt(time.split(":")[0], 10);
       if (filter === "am") return hour < 12;
       if (filter === "pm") return hour >= 12;
@@ -157,11 +151,11 @@ function Home() {
   const handleTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
     const delta = touchStart - touchEnd;
-    if (delta > 75) setSelectedDate((d) => d.add(1, "day"))
+    if (delta > 75) setSelectedDate((d) => d.add(1, "day"));
     if (delta < -75) setSelectedDate((d) => d.subtract(1, "day"));
     setTouchStart(0);
     setTouchEnd(0);
-};
+  };
 
   const formatTime = (timeStr) => {
     if (!timeStr) return "";
@@ -179,7 +173,6 @@ function Home() {
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Header */}
       <header className="header">
         <div
           className="logo"
@@ -189,7 +182,6 @@ function Home() {
           <img src="/logo.png" alt="TimeForMass" className="logo-image" />
           <span className="logo-text">TimeForMass</span>
         </div>
-
         <button
           className={`menu-button ${menuOpen ? "open" : ""}`}
           onClick={() => setMenuOpen(!menuOpen)}
@@ -200,8 +192,6 @@ function Home() {
           <span></span>
         </button>
       </header>
-
-      {/* Menu dropdown */}
       {menuOpen && (
         <div className="menu-dropdown">
           {isAdminLoggedIn ? (
@@ -237,8 +227,6 @@ function Home() {
           )}
         </div>
       )}
-
-      {/* Hero */}
       <section className="hero">
         <img src="/hero-image.png" alt="Eucharist" className="hero-image" />
         <div className="hero-overlay">
@@ -248,8 +236,6 @@ function Home() {
           </blockquote>
         </div>
       </section>
-
-      {/* Calendar & schedules (unchanged) */}
       <section className="calendar-section">
         <div className="calendar-header">
           <button
@@ -277,7 +263,6 @@ function Home() {
             ›
           </button>
         </div>
-
         {!showFullCalendar ? (
           <div className="week-view">
             {getWeekDates().map((date, index) => (
@@ -330,7 +315,6 @@ function Home() {
             </div>
           </div>
         )}
-
         <div className="time-filter">
           <button
             className={`filter-button ${filter === "all" ? "active" : ""}`}
@@ -352,7 +336,6 @@ function Home() {
           </button>
         </div>
       </section>
-
       <section className="schedules-section">
         {loading ? (
           <div className="loading">Loading schedules...</div>
@@ -362,15 +345,24 @@ function Home() {
           getFilteredSchedules().map((schedule, index) => (
             <div key={index} className="schedule-card">
               <div className="schedule-time">
-                {formatTime(schedule.start_time || schedule.time)} -{" "}
-                {formatTime(schedule.end_time || schedule.time)}
+                {formatTime(schedule.start_time)} -{" "}
+                {formatTime(schedule.end_time)}
               </div>
               <h3 className="schedule-parish">{schedule.parish_name}</h3>
               <p className="schedule-details">
-                {schedule.type && <strong>{schedule.type}</strong>}
-                {schedule.language && schedule.type && " • "}
+                {schedule.mass_types && schedule.mass_types.name ? (
+                  <>
+                    <strong>{schedule.mass_types.name}</strong>
+                    {(schedule.language || schedule.notes) && " • "}
+                  </>
+                ) : schedule.mass_type_name ? (
+                  <>
+                    <strong>{schedule.mass_type_name}</strong>
+                    {(schedule.language || schedule.notes) && " • "}
+                  </>
+                ) : null}
                 {schedule.language}
-                {schedule.notes && ` • ${schedule.notes}`}
+                {schedule.notes && `   ${schedule.notes}`}
               </p>
               {schedule.parish_location_url && (
                 <a
@@ -379,7 +371,7 @@ function Home() {
                   rel="noopener noreferrer"
                   className="direction-button"
                 >
-                  <span className="direction-icon">📍</span> Direction
+                  <span className="direction-icon"> </span> Direction
                 </a>
               )}
             </div>
