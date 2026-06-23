@@ -21,7 +21,7 @@ app.use(
   })
 );
 
-app.post('/api/scrape', (req, res) => {
+app.post('/api/scrape', async (req, res) => {
   const { adminId, triggerId, templateId, startDate, endDate } = req.body ?? {};
 
   if (adminId === undefined || triggerId === undefined || templateId === undefined) {
@@ -36,7 +36,40 @@ app.post('/api/scrape', (req, res) => {
     });
   }
 
-  const scraperProcess = spawn('python', [SCRAPER_SCRIPT, String(triggerId), String(templateId)], {
+  let routingTemplateId = parseInt(templateId, 10);
+
+  if (triggerId === 'st_john_btn') {
+    try {
+      const stJohnParishId = 12;
+      const targetDate = startDate || new Date().toISOString().split('T')[0];
+      const activeTemplate = await templateRepository.getActiveTemplateByDate(stJohnParishId, targetDate);
+      
+      if (activeTemplate) {
+        routingTemplateId = activeTemplate.template_id;
+      } else {
+        const templatesList = await templateRepository.findByAdminId(stJohnParishId);
+        if (templatesList && templatesList.length > 0) {
+          const defaultTemp = templatesList.find((t) => t.is_default) || templatesList[0];
+          routingTemplateId = defaultTemp.template_id;
+        } else {
+          const defaultTemplate = await templateRepository.createTemplate(
+            stJohnParishId,
+            "Template 1",
+            true,
+            startDate || null,
+            endDate || null
+          );
+          if (defaultTemplate) {
+            routingTemplateId = defaultTemplate.template_id;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[routing lookup failure]', err);
+    }
+  }
+
+  const scraperProcess = spawn('python', [SCRAPER_SCRIPT, String(triggerId), String(routingTemplateId)], {
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -74,7 +107,12 @@ app.post('/api/scrape', (req, res) => {
 
     if (code === 0) {
       try {
-        const payload = JSON.parse(outputData.trim());
+        const jsonStartIndex = outputData.indexOf('{');
+        if (jsonStartIndex === -1) {
+          throw new Error("No valid JSON payload found in scraper stdout.");
+        }
+        const cleanJsonString = outputData.substring(jsonStartIndex).trim();
+        const payload = JSON.parse(cleanJsonString);
 
         if (!payload.start_date) {
           payload.start_date = startDate || null;
@@ -85,19 +123,18 @@ app.post('/api/scrape', (req, res) => {
         }
 
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
-        const templateIdInt = parseInt(templateId, 10);
         const resolvedStartDate = payload.start_date || null;
         const resolvedEndDate = payload.end_date || null;
 
         if (resolvedStartDate || resolvedEndDate) {
-          await templateRepository.update(templateIdInt, {
+          await templateRepository.update(routingTemplateId, {
             start_date: resolvedStartDate,
             end_date: resolvedEndDate,
           });
         }
 
         const ingestionResult = await scrapeIngestionService.replaceDraftSchedules(
-          templateIdInt,
+          routingTemplateId,
           schedules
         );
 

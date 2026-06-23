@@ -284,7 +284,14 @@ function AdminDashboard() {
     if (!selectedTemplate || !admin) return;
     const weekRange = getCurrentWeekDateRange();
     setScrapingTarget(triggerId);
-    try {
+
+    console.log("Sending Scraper Payload:", {
+    adminId: admin.admin_id,
+    triggerId: triggerId,
+    templateId: selectedTemplate.template_id
+  });
+    
+  try {
       const response = await fetch('http://localhost:3001/api/scrape', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

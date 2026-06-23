@@ -27,7 +27,7 @@ export const templateRepository = {
     if (error) throw error;
 
     if (data && data.length > 0) {
-      return data;
+      return data[0];
     }
 
     const { data: nullDateData, error: nullDateError } = await supabase
@@ -42,7 +42,7 @@ export const templateRepository = {
     if (nullDateError) throw nullDateError;
 
     if (nullDateData && nullDateData.length > 0) {
-      return nullDateData;
+      return nullDateData[0];
     }
 
     const { data: fallbackData, error: fallbackError } = await supabase
@@ -53,7 +53,7 @@ export const templateRepository = {
       .order('template_id', { ascending: false });
 
     if (fallbackError) throw fallbackError;
-    return fallbackData;
+    return fallbackData && fallbackData.length > 0 ? fallbackData[0] : null;
   },
 
   async findById(templateId) {

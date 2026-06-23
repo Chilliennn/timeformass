@@ -125,7 +125,8 @@ export const scheduleCoordinator = {
       let templates = [];
       if (targetDate) {
         try {
-          templates = await templateRepository.getActiveTemplateByDate(parish.parish_id, targetDate);
+          const activeTemplate = await templateRepository.getActiveTemplateByDate(parish.parish_id, targetDate);
+          templates = activeTemplate ? [activeTemplate] : [];
         } catch (e) {
           console.error(e);
         }
@@ -146,6 +147,11 @@ export const scheduleCoordinator = {
       
       for (const template of templates) {
         try {
+          if (targetDate) {
+            if (template.start_date && targetDate < template.start_date) continue;
+            if (template.end_date && targetDate > template.end_date) continue;
+          }
+
           const schedules = await templateRepository.getTemplateSchedulesCombined(template.template_id);
           if (!schedules || schedules.length === 0) continue;
           

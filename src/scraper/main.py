@@ -24,6 +24,9 @@ def _extract_date_range_from_bulletin_file_name(file_name):
 
 
 def main():
+    true_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
     trigger_id = sys.argv[1] if len(sys.argv) > 1 else None
     template_id = sys.argv[2] if len(sys.argv) > 2 else None
 
@@ -63,7 +66,7 @@ def main():
         "end_date": end_date,
     }
 
-    print(json.dumps(payload, ensure_ascii=False))
+    print(json.dumps(payload, ensure_ascii=False), file=true_stdout)
 
 
 if __name__ == "__main__":

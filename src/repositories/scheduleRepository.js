@@ -1,7 +1,6 @@
 import { supabase } from '../lib/supabaseClient.js';
 
 export const scheduleRepository = {
-  // Fetch all schedules for a parish
   async findByParishId(parishId) {
     const { data, error } = await supabase
       .from('schedule')
@@ -14,7 +13,6 @@ export const scheduleRepository = {
     return data;
   },
 
-  // Fetch schedule by ID
   async findById(scheduleId) {
     const { data, error } = await supabase
       .from('schedule')
@@ -26,7 +24,6 @@ export const scheduleRepository = {
     return data;
   },
 
-  // Fetch schedules by day
   async findByDay(parishId, dayOfWeek) {
     const { data, error } = await supabase
       .from('schedule')
@@ -39,7 +36,6 @@ export const scheduleRepository = {
     return data;
   },
 
-  // Create new schedule
   async insert(schedule) {
     const { data, error } = await supabase
       .from('schedule')
@@ -51,7 +47,6 @@ export const scheduleRepository = {
     return data;
   },
 
-  // Update schedule
   async update(scheduleId, updates) {
     const { data, error } = await supabase
       .from('schedule')
@@ -64,7 +59,6 @@ export const scheduleRepository = {
     return data;
   },
 
-  // Delete schedule
   async delete(scheduleId) {
     const { error } = await supabase
       .from('schedule')
@@ -74,7 +68,6 @@ export const scheduleRepository = {
     if (error) throw error;
   },
 
-  // Bulk save schedules (for batch operations)
   async saveMany(schedules) {
     const { data, error } = await supabase
       .from('schedule')
