@@ -181,14 +181,26 @@ export function useAdminDashboard(navigate) {
           navigate("/login");
           return;
         }
-        const email = session.user.email;
-        const { data: adminRow, error: adminError } = await supabase
+        const { data: adminRowByAuth, error: adminAuthError } = await supabase
           .from("admin")
           .select("admin_id, name, email, parish_id")
-          .eq("email", email)
+          .eq("auth_uid", session.user.id)
           .maybeSingle();
-        if (adminError) throw adminError;
+
+        if (adminAuthError) throw adminAuthError;
+
+        let adminRow = adminRowByAuth;
         if (!adminRow) {
+          const { data: adminRowByEmail, error: adminEmailError } = await supabase
+            .from("admin")
+            .select("admin_id, name, email, parish_id")
+            .eq("email", session.user.email)
+            .maybeSingle();
+          if (adminEmailError) throw adminEmailError;
+          adminRow = adminRowByEmail;
+        }
+
+        if (!adminRow || !adminRow.parish_id) {
           navigate("/login");
           return;
         }

@@ -30,13 +30,25 @@ function Login() {
     }
 
     // 2) fetch admin metadata by email
-    const { data: adminRow, error: adminErr } = await supabase
+    const { data: adminRowByAuth, error: adminAuthErr } = await supabase
       .from('admin')
       .select('admin_id, parish_id, name, email, auth_uid')
-      .eq('email', email)
+      .eq('auth_uid', _authData.user.id)
       .maybeSingle();
 
-    if (adminErr || !adminRow) {
+    let adminRow = adminRowByAuth;
+    let adminErr = adminAuthErr;
+    if (!adminRow && !adminErr) {
+      const { data: adminRowByEmail, error: adminEmailErr } = await supabase
+        .from('admin')
+        .select('admin_id, parish_id, name, email, auth_uid')
+        .eq('email', email)
+        .maybeSingle();
+      adminRow = adminRowByEmail;
+      adminErr = adminEmailErr;
+    }
+
+    if (adminErr || !adminRow || !adminRow.parish_id) {
       setError('Login succeeded but admin profile missing');
       _setLoading(false);
       return;
