@@ -308,7 +308,24 @@ export function useAdminDashboard(navigate) {
         }
       }
 
-      setSchedules(aggregatedLive);
+      const liveSchedulesToRender = aggregatedLive.filter((liveSchedule) => {
+        return !aggregatedDrafts.some((draftSchedule) => {
+          const sameTemplate = liveSchedule.template_id === draftSchedule.template_id;
+          const sameDay = String(liveSchedule.day_of_week) === String(draftSchedule.day_of_week);
+          const sameTime = liveSchedule.start_time === draftSchedule.start_time
+            && liveSchedule.end_time === draftSchedule.end_time;
+          const compatibleDate = !liveSchedule.date
+            || !draftSchedule.date
+            || liveSchedule.date === draftSchedule.date;
+          const compatibleMassType = !liveSchedule.mass_type_id
+            || !draftSchedule.mass_type_id
+            || liveSchedule.mass_type_id === draftSchedule.mass_type_id;
+
+          return sameTemplate && sameDay && sameTime && compatibleDate && compatibleMassType;
+        });
+      });
+
+      setSchedules(liveSchedulesToRender);
       setDraftSchedules(aggregatedDrafts);
     } catch (err) {
       console.error(err);
@@ -432,9 +449,20 @@ export function useAdminDashboard(navigate) {
   };
 
   const handleApproveAllDrafts = async () => {
-    if (!selectedTemplate) return;
+    const templateIds = selectedTemplate
+      ? [selectedTemplate.template_id]
+      : [...new Set(
+          draftSchedules
+            .map((schedule) => schedule.template_id)
+            .filter((templateId) => templateId != null)
+        )];
+
+    if (templateIds.length === 0) return;
+
     try {
-      await templateRepository.approveAllStagedDrafts(selectedTemplate.template_id);
+      for (const templateId of templateIds) {
+        await templateRepository.approveAllStagedDrafts(templateId);
+      }
       await refreshTemplateSchedules();
       setShowSavedMessage(true);
     } catch (error) {

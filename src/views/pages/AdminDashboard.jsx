@@ -61,7 +61,7 @@ function AdminDashboard() {
   };
 
   const renderDraftBlock = (schedule, alignment = { left: "0%", width: "100%" }) => {
-    const massTypeName = schedule.mass_types?.name || "Scraped Draft";
+    const massTypeName = schedule.mass_types?.name || "Draft";
     const shortName = massTypeName.substring(0, 3).toUpperCase();
     const startMinutes = state.timeStringToMinutesFromStart(schedule.start_time);
     const durationMinutes = state.timeStringToMinutesFromStart(schedule.end_time) - startMinutes;
