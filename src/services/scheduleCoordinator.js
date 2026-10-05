@@ -1,6 +1,7 @@
 import { parishRepository } from '../repositories/parishRepository.js';
 import { adminRepository } from '../repositories/adminRepository.js';
 import { templateRepository } from '../repositories/templateRepository.js';
+import { scheduleOccurrenceRepository } from '../repositories/scheduleOccurrenceRepository.js';
 import bcrypt from 'bcryptjs';
 
 export const scheduleCoordinator = {
@@ -120,8 +121,43 @@ export const scheduleCoordinator = {
   async getActiveSchedules(targetDate = null) {
     const parishes = await parishRepository.findAll();
     const allSchedules = [];
+
+    if (targetDate) {
+      const approvedOccurrences = await scheduleOccurrenceRepository.findApprovedByDate(targetDate);
+      const occurrencesByParish = new Map();
+      approvedOccurrences.forEach((schedule) => {
+        if (!occurrencesByParish.has(schedule.parish_id)) {
+          occurrencesByParish.set(schedule.parish_id, []);
+        }
+        occurrencesByParish.get(schedule.parish_id).push(schedule);
+      });
+
+      parishes.forEach((parish) => {
+        const parishOccurrences = occurrencesByParish.get(parish.parish_id) || [];
+        allSchedules.push(...parishOccurrences.map((schedule) => ({
+          ...schedule,
+          parish_name: parish.name,
+          parish_location_url: parish.location_url,
+          mass_type_name: '',
+        })));
+      });
+
+      if (approvedOccurrences.length > 0) {
+        const migratedParishIds = new Set(occurrencesByParish.keys());
+        return allSchedules.concat(
+          await this.getLegacyActiveSchedules(targetDate, parishes, migratedParishIds)
+        );
+      }
+    }
+
+    return allSchedules.concat(await this.getLegacyActiveSchedules(targetDate, parishes));
+  },
+
+  async getLegacyActiveSchedules(targetDate, parishes, excludedParishIds = new Set()) {
+    const legacySchedules = [];
     
     for (const parish of parishes) {
+      if (excludedParishIds.has(parish.parish_id)) continue;
       let templates = [];
       if (targetDate) {
         try {
@@ -156,7 +192,7 @@ export const scheduleCoordinator = {
           if (!schedules || schedules.length === 0) continue;
           
           const approvedSchedules = schedules.filter(s => !s.is_scraped_draft);
-          allSchedules.push(...approvedSchedules.map(s => ({
+          legacySchedules.push(...approvedSchedules.map(s => ({
             ...s,
             parish_name: parish.name,
             parish_location_url: parish.location_url,
@@ -167,7 +203,7 @@ export const scheduleCoordinator = {
         }
       }
     }
-    return allSchedules;
+    return legacySchedules;
   },
 
   async updateParishInfo(parishId, adminId, updates) {

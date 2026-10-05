@@ -4,7 +4,7 @@ import cors from 'cors';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { templateRepository } from './src/repositories/templateRepository.js';
+import { parishRepository } from './src/repositories/parishRepository.js';
 import { scrapeIngestionService } from './src/services/scrapeIngestionService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -13,6 +13,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 const SCRAPER_SCRIPT = path.resolve(__dirname, 'src/scraper/main.py');
+const SCRAPER_ROUTES = {
+  st_john_btn: { host: 'stjohnkl.com.my', names: ['Cathedral of St John the Evangelist'] },
+  holy_rosary_btn: { host: 'hrckl.com', names: ['Holy Rosary Church'] },
+  ofkl: { host: 'olfkl.com', names: ['Church of Our Lady of Fatima', 'Church of Our Lady of Fatima (OFKL)'] },
+  assumption_pj_btn: { host: 'assumptionpj.org', names: ['Assumption Church PJ', 'Assumption Church'] },
+};
+
+const getConfiguredParish = (parishes, route) => parishes.find((parish) => {
+  const scrapeUrl = String(parish.target_scrape_url || '').toLowerCase();
+  const parishName = String(parish.name || '').toLowerCase();
+  return scrapeUrl.includes(route.host) || route.names.some((name) => parishName === name.toLowerCase());
+});
 
 app.use(express.json());
 app.use(
@@ -22,9 +34,9 @@ app.use(
 );
 
 app.post('/api/scrape', async (req, res) => {
-  const { adminId, triggerId, templateId, startDate, endDate } = req.body ?? {};
+  const { adminId, triggerId, startDate } = req.body ?? {};
 
-  if (adminId === undefined || triggerId === undefined || templateId === undefined) {
+  if (adminId === undefined || triggerId === undefined) {
     return res.status(400).json({
       error: 'Request body must include adminId, triggerId, and templateId.'
     });
@@ -36,16 +48,23 @@ app.post('/api/scrape', async (req, res) => {
     });
   }
 
-  let routingTemplateId = parseInt(templateId, 10);
   let targetParishId = null;
   let syncLabel = "Scraped Week";
+  const scraperRoute = SCRAPER_ROUTES[triggerId];
+
+  if (!scraperRoute) {
+    return res.status(400).json({ error: `Unknown scraper trigger: ${triggerId}` });
+  }
 
   try {
-    const currentTemplate = await templateRepository.findById(routingTemplateId);
-    if (currentTemplate) {
-      targetParishId = currentTemplate.parish_id;
-      syncLabel = currentTemplate.name.split(' - ')[0];
+    const parishes = await parishRepository.findAll();
+    const configuredParish = getConfiguredParish(parishes, scraperRoute);
+    if (!configuredParish) {
+      return res.status(500).json({ error: `No parish is configured for scraper ${triggerId}.` });
     }
+
+    targetParishId = configuredParish.parish_id;
+    syncLabel = configuredParish.name;
   } catch (err) {
     console.error('[Template validation failure]', err);
   }
@@ -96,61 +115,23 @@ app.post('/api/scrape', async (req, res) => {
         const payload = JSON.parse(cleanJsonString);
 
         const finalStartDate = payload.start_date || startDate || null;
-        const finalEndDate = payload.end_date || endDate || null;
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
 
-        if (targetParishId) {
-          const templateName = `${syncLabel} - Sync (${finalStartDate})`;
-          const allTemplates = await templateRepository.findByAdminId(targetParishId);
-          const existingTemplate = allTemplates.find(t => t.name === templateName);
-
-          if (existingTemplate) {
-            routingTemplateId = existingTemplate.template_id;
-          } else {
-            const freshTemplate = await templateRepository.createTemplate(
-              targetParishId,
-              templateName,
-              false,
-              finalStartDate,
-              finalEndDate
-            );
-            if (freshTemplate) {
-              routingTemplateId = freshTemplate.template_id;
-              const defaultTemplate = allTemplates.find(t => t.is_default);
-              if (defaultTemplate) {
-                const baseSchedules = await templateRepository.getTemplateSchedulesCombined(defaultTemplate.template_id);
-                if (baseSchedules && baseSchedules.length > 0) {
-                  for (const baseSched of baseSchedules) {
-                    await templateRepository.insertSchedule({
-                      template_id: routingTemplateId,
-                      mass_type_id: baseSched.mass_type_id,
-                      day_of_week: baseSched.day_of_week,
-                      start_time: baseSched.start_time,
-                      end_time: baseSched.end_time,
-                      language: baseSched.language,
-                      notes: baseSched.notes,
-                      is_scraped_draft: false
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        const ingestionResult = await scrapeIngestionService.replaceDraftSchedules(
-          routingTemplateId,
+        const ingestionResult = await scrapeIngestionService.replaceParishDraftOccurrences(
+          targetParishId,
+          String(temporaryProcessId),
+          payload.source || syncLabel,
           schedules,
           finalStartDate
         );
 
         return res.status(200).json({
           success: true,
-          message: `Successfully scraped and imported ${ingestionResult.insertedCount} schedules into its correct historic template snapshot!`,
+          message: `Successfully scraped and staged ${ingestionResult.insertedCount} parish schedules for review.`,
           source: payload.source || null,
-          schedules: ingestionResult.schedules,
+          schedules: ingestionResult.occurrences,
           insertedCount: ingestionResult.insertedCount,
-          template_id: routingTemplateId
+          parish_id: targetParishId
         });
       } catch (error) {
         console.error('[scraper import error]', error);

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabaseClient.js";
 import { massTypeRepository } from "../repositories/massTypeRepository.js";
 import { templateRepository } from "../repositories/templateRepository.js";
+import { scheduleOccurrenceRepository } from "../repositories/scheduleOccurrenceRepository.js";
 
 export function useAdminDashboard(navigate) {
   const [admin, setAdmin] = useState(null);
@@ -326,17 +327,29 @@ export function useAdminDashboard(navigate) {
       });
 
       setSchedules(liveSchedulesToRender);
-      setDraftSchedules(aggregatedDrafts);
+      const importedDrafts = await scheduleOccurrenceRepository.findDraftsByDateRange(
+        selectedParishId,
+        currentViewDate,
+        formatDateForDb(currentWeek[6])
+      );
+      setDraftSchedules([
+        ...aggregatedDrafts,
+        ...importedDrafts.map((schedule) => ({
+          ...schedule,
+          template_schedule_id: `occurrence-${schedule.occurrence_id}`,
+          is_occurrence_draft: true,
+        })),
+      ]);
     } catch (err) {
       console.error(err);
     }
-  }, [selectedParishId, selectedTemplate, templates, currentViewDate]);
+  }, [selectedParishId, selectedTemplate, templates, currentViewDate, currentWeek]);
 
   useEffect(() => {
-    if (templates.length > 0) {
+    if (templates.length > 0 || selectedParishId) {
       refreshTemplateSchedules();
     }
-  }, [selectedTemplate, refreshTemplateSchedules, templates]);
+  }, [selectedTemplate, refreshTemplateSchedules, templates, selectedParishId]);
 
   const handleTriggerScraper = async (triggerId) => {
     if (!admin) return;
@@ -441,7 +454,11 @@ export function useAdminDashboard(navigate) {
     const scheduleToDelete = pendingDeleteSchedule;
     setPendingDeleteSchedule(null);
     if (scheduleToDelete.is_scraped_draft) {
-      await templateRepository.deleteSchedule(scheduleToDelete.template_schedule_id);
+      if (scheduleToDelete.is_occurrence_draft) {
+        await scheduleOccurrenceRepository.deleteDraft(scheduleToDelete.occurrence_id);
+      } else {
+        await templateRepository.deleteSchedule(scheduleToDelete.template_schedule_id);
+      }
       await refreshTemplateSchedules();
       return;
     }
@@ -449,6 +466,14 @@ export function useAdminDashboard(navigate) {
   };
 
   const handleApproveAllDrafts = async () => {
+    const occurrenceIds = draftSchedules
+      .filter((schedule) => schedule.is_occurrence_draft)
+      .map((schedule) => schedule.occurrence_id);
+
+    if (occurrenceIds.length > 0) {
+      await scheduleOccurrenceRepository.approveDrafts(occurrenceIds);
+    }
+
     const templateIds = selectedTemplate
       ? [selectedTemplate.template_id]
       : [...new Set(
