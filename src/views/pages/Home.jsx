@@ -69,10 +69,11 @@ function Home() {
       console.log("[DEBUG Home.jsx] Total active schedules fetched from coordinator:", activeSchedules ? activeSchedules.length : 0, activeSchedules);
       
       const daySchedules = (activeSchedules || []).filter((s) => {
+        if (s.date) {
+          return s.date === formattedDate;
+        }
         const dbDay = parseInt(s.day_of_week, 10);
-        const match = dbDay === targetDay || (targetDay === 7 && dbDay === 0) || (targetDay === 7 && dbDay === 7);
-        console.log(`[DEBUG Home.jsx] Filtering schedule ID ${s.template_schedule_id}: dbDay=${dbDay} vs targetDay=${targetDay} -> Match: ${match}`);
-        return match;
+        return dbDay === targetDay || (targetDay === 7 && dbDay === 0) || (targetDay === 7 && dbDay === 7);
       });
 
       console.log("[DEBUG Home.jsx] Schedules after day filtering:", daySchedules.length, daySchedules);

@@ -172,6 +172,7 @@ export const templateRepository = {
       language: schedule.language ?? null,
       notes: schedule.notes ?? null,
       is_scraped_draft: true,
+      date: schedule.date ?? null,
     }));
     if (rows.length === 0) {
       return [];

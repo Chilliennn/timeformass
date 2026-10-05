@@ -37,39 +37,21 @@ app.post('/api/scrape', async (req, res) => {
   }
 
   let routingTemplateId = parseInt(templateId, 10);
+  let targetParishId = null;
+  let syncLabel = "Scraped Week";
 
-  if (triggerId === 'st_john_btn') {
-    try {
-      const stJohnParishId = 12;
-      const targetDate = startDate || new Date().toISOString().split('T')[0];
-      const activeTemplate = await templateRepository.getActiveTemplateByDate(stJohnParishId, targetDate);
-      
-      if (activeTemplate) {
-        routingTemplateId = activeTemplate.template_id;
-      } else {
-        const templatesList = await templateRepository.findByAdminId(stJohnParishId);
-        if (templatesList && templatesList.length > 0) {
-          const defaultTemp = templatesList.find((t) => t.is_default) || templatesList[0];
-          routingTemplateId = defaultTemp.template_id;
-        } else {
-          const defaultTemplate = await templateRepository.createTemplate(
-            stJohnParishId,
-            "Template 1",
-            true,
-            startDate || null,
-            endDate || null
-          );
-          if (defaultTemplate) {
-            routingTemplateId = defaultTemplate.template_id;
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[routing lookup failure]', err);
+  try {
+    const currentTemplate = await templateRepository.findById(routingTemplateId);
+    if (currentTemplate) {
+      targetParishId = currentTemplate.parish_id;
+      syncLabel = currentTemplate.name.split(' - ')[0];
     }
+  } catch (err) {
+    console.error('[Template validation failure]', err);
   }
 
-  const scraperProcess = spawn('python', [SCRAPER_SCRIPT, String(triggerId), String(routingTemplateId)], {
+  const temporaryProcessId = Math.floor(Math.random() * 10000);
+  const scraperProcess = spawn('python', [SCRAPER_SCRIPT, String(triggerId), String(temporaryProcessId)], {
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -90,7 +72,6 @@ app.post('/api/scrape', async (req, res) => {
 
   scraperProcess.on('error', (error) => {
     console.error('[scraper error]', error);
-
     if (!res.headersSent) {
       res.status(500).json({
         error: 'Scraper failed to start.',
@@ -114,36 +95,62 @@ app.post('/api/scrape', async (req, res) => {
         const cleanJsonString = outputData.substring(jsonStartIndex).trim();
         const payload = JSON.parse(cleanJsonString);
 
-        if (!payload.start_date) {
-          payload.start_date = startDate || null;
-        }
-
-        if (!payload.end_date) {
-          payload.end_date = endDate || null;
-        }
-
+        const finalStartDate = payload.start_date || startDate || null;
+        const finalEndDate = payload.end_date || endDate || null;
         const schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
-        const resolvedStartDate = payload.start_date || null;
-        const resolvedEndDate = payload.end_date || null;
 
-        if (resolvedStartDate || resolvedEndDate) {
-          await templateRepository.update(routingTemplateId, {
-            start_date: resolvedStartDate,
-            end_date: resolvedEndDate,
-          });
+        if (targetParishId) {
+          const templateName = `${syncLabel} - Sync (${finalStartDate})`;
+          const allTemplates = await templateRepository.findByAdminId(targetParishId);
+          const existingTemplate = allTemplates.find(t => t.name === templateName);
+
+          if (existingTemplate) {
+            routingTemplateId = existingTemplate.template_id;
+          } else {
+            const freshTemplate = await templateRepository.createTemplate(
+              targetParishId,
+              templateName,
+              false,
+              finalStartDate,
+              finalEndDate
+            );
+            if (freshTemplate) {
+              routingTemplateId = freshTemplate.template_id;
+              const defaultTemplate = allTemplates.find(t => t.is_default);
+              if (defaultTemplate) {
+                const baseSchedules = await templateRepository.getTemplateSchedulesCombined(defaultTemplate.template_id);
+                if (baseSchedules && baseSchedules.length > 0) {
+                  for (const baseSched of baseSchedules) {
+                    await templateRepository.insertSchedule({
+                      template_id: routingTemplateId,
+                      mass_type_id: baseSched.mass_type_id,
+                      day_of_week: baseSched.day_of_week,
+                      start_time: baseSched.start_time,
+                      end_time: baseSched.end_time,
+                      language: baseSched.language,
+                      notes: baseSched.notes,
+                      is_scraped_draft: false
+                    });
+                  }
+                }
+              }
+            }
+          }
         }
 
         const ingestionResult = await scrapeIngestionService.replaceDraftSchedules(
           routingTemplateId,
-          schedules
+          schedules,
+          finalStartDate
         );
 
         return res.status(200).json({
           success: true,
-          message: `Successfully scraped and imported ${ingestionResult.insertedCount} schedules as drafts!`,
+          message: `Successfully scraped and imported ${ingestionResult.insertedCount} schedules into its correct historic template snapshot!`,
           source: payload.source || null,
           schedules: ingestionResult.schedules,
-          insertedCount: ingestionResult.insertedCount
+          insertedCount: ingestionResult.insertedCount,
+          template_id: routingTemplateId
         });
       } catch (error) {
         console.error('[scraper import error]', error);
@@ -170,7 +177,7 @@ app.post('/api/scrape', async (req, res) => {
         detail = parsed.error || detail;
         break;
       } catch {
-        // Continue scanning for a JSON payload line.
+        // Ignore lines that aren't valid JSON
       }
     }
 
