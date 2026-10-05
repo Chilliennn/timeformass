@@ -13,72 +13,208 @@ from google.genai import types
 from google.genai.errors import APIError
 from engines.base_engine import BaseEngine
 
+try:
+    from curl_cffi import requests as cffi_requests
+except Exception:
+    cffi_requests = None
+
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    sync_playwright = None
+
 
 class AssumptionPjEngine(BaseEngine):
     target_url = "https://assumptionpj.org/bulletin-mass-intentions/"
     source_name = "Assumption Church PJ"
     model_name = "gemini-2.5-flash"
 
-    def _fetch_latest_bulletin_pdf(self, session, headers):
+    def _fetch_latest_bulletin_pdf(self):
         now = datetime.now()
 
         for i in range(8):
             check_date = now - timedelta(days=i)
             year = check_date.strftime("%Y")
             month = check_date.strftime("%m")
-            date_str = check_date.strftime("%d.%m-%Y")
+            date_str = check_date.strftime("%d.%m.%Y")
 
             url_variant = f"https://assumptionpj.org/wp-content/uploads/{year}/{month}/ASSUMPTION-BULLETIN-{date_str}.pdf"
+            print(
+                f"[{self.source_name}] Trying historical pattern match: {url_variant}",
+                file=sys.stderr,
+            )
+            resp = self._fetch(url_variant, kind="pdf", referer=self.target_url, timeout=15)
+            if resp is not None and self._acceptable(resp, "pdf"):
+                return url_variant, resp
+
+        print(
+            f"[{self.source_name}] Falling back to broad DOM parsing: {self.target_url}",
+            file=sys.stderr,
+        )
+        page_response = self._fetch(self.target_url, kind="html", timeout=30)
+        page_html = None
+        if page_response is not None and page_response.status_code == 200:
+            page_html = page_response.text
+
+        if not page_html or "One moment, please" in page_html:
+            print(
+                f"[{self.source_name}] Regular fetch returned challenge/empty page; switching to Playwright.",
+                file=sys.stderr,
+            )
             try:
+                page_html = self._fetch_with_playwright(self.target_url, timeout=60)
+            except Exception as e:
                 print(
-                    f"[{self.source_name}] Trying historical pattern match: {url_variant}",
+                    f"[{self.source_name}] Playwright fallback failed: {e}",
                     file=sys.stderr,
                 )
-                response = session.get(url_variant, headers=headers, timeout=15)
-                if response.status_code == 200:
-                    return url_variant, response
-            except Exception:
-                pass
 
-        try:
+        if not page_html:
+            raise ValueError("Bulletin page returned no usable response.")
+
+        cleaned_html = page_html.replace("\\", "")
+        pdf_links = re.findall(
+            r'https?://[^\s"\'<>]+?\.pdf', cleaned_html, re.IGNORECASE
+        )
+
+        if pdf_links:
+            latest_pdf_url = pdf_links[0]
             print(
-                f"[{self.source_name}] Falling back to broad DOM parsing: {self.target_url}",
+                f"[{self.source_name}] Extracted asset URL from page payload: {latest_pdf_url}",
                 file=sys.stderr,
             )
-            page_response = session.get(self.target_url, headers=headers, timeout=30)
-            page_response.raise_for_status()
-
-            cleaned_html = page_response.text.replace("\\", "")
-            pdf_links = re.findall(
-                r'https?://[^\s"\'<>]+?\.pdf', cleaned_html, re.IGNORECASE
+            pdf_response = self._fetch(
+                latest_pdf_url, kind="pdf", referer=self.target_url, timeout=60
             )
-
-            if pdf_links:
-                latest_pdf_url = pdf_links[0]
-                print(
-                    f"[{self.source_name}] Extracted asset URL from page payload: {latest_pdf_url}",
-                    file=sys.stderr,
-                )
-                pdf_response = session.get(latest_pdf_url, headers=headers, timeout=60)
-                pdf_response.raise_for_status()
+            if pdf_response is not None and self._acceptable(pdf_response, "pdf"):
                 return latest_pdf_url, pdf_response
-        except Exception as e:
-            print(
-                f"[{self.source_name}] Fallback DOM layout matching failed: {e}",
-                file=sys.stderr,
-            )
 
-        target_err_str = now.strftime("%d.%m-%Y")
+        target_err_str = now.strftime("%d.%m.%Y")
         raise ValueError(
             f"Could not reach or locate the bulletin PDF pattern for date {target_err_str}"
         )
 
-    def scrape(self):
-        session = requests.Session()
-        headers = {"User-Agent": self._user_agent()}
+    def _fetch_with_playwright(self, url, timeout=60):
+        if sync_playwright is None:
+            raise RuntimeError("playwright is not installed.")
+        print(
+            f"[{self.source_name}] [playwright] Launching browser for {url}",
+            file=sys.stderr,
+        )
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=self._user_agent(),
+                viewport={"width": 1280, "height": 800},
+                locale="en-US",
+            )
+            page = context.new_page()
+            page.set_default_timeout(timeout * 1000)
+            page.goto(url, wait_until="networkidle", timeout=timeout * 1000)
+            page.wait_for_load_state("networkidle")
+            content = page.content()
+            browser.close()
+            return content
 
+    def _headers(self, kind="html", referer=None):
+        if kind == "pdf":
+            return {
+                "User-Agent": self._user_agent(),
+                "Accept": "application/pdf,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Referer": referer or self.target_url,
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "same-origin",
+            }
+        return {
+            "User-Agent": self._user_agent(),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Referer": referer or "https://assumptionpj.org/",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+        }
+
+    def _get_sessions(self):
+        if getattr(self, "_sessions", None) is None:
+            sessions = []
+            if cffi_requests is not None:
+                try:
+                    sessions.append(
+                        ("curl_cffi", cffi_requests.Session(impersonate="chrome124"))
+                    )
+                except Exception as e:
+                    print(
+                        f"[{self.source_name}] curl_cffi unavailable: {e}",
+                        file=sys.stderr,
+                    )
+            sessions.append(("requests", requests.Session()))
+            self._sessions = sessions
+            self._warmed = set()
+        return self._sessions
+
+    def _warm_up(self, name, session):
+        if name in self._warmed:
+            return
+        self._warmed.add(name)
         try:
-            pdf_url, pdf_response = self._fetch_latest_bulletin_pdf(session, headers)
+            session.get(
+                "https://assumptionpj.org/",
+                headers=self._headers("html"),
+                timeout=20,
+            )
+        except Exception as e:
+            print(
+                f"[{self.source_name}] Warm-up via {name} failed: {e}",
+                file=sys.stderr,
+            )
+
+    def _acceptable(self, resp, kind):
+        if resp is None or resp.status_code != 200:
+            return False
+        ct = (resp.headers.get("Content-Type") or "").lower()
+        if kind == "pdf":
+            return "pdf" in ct or resp.content[:4] == b"%PDF"
+        return True
+
+    def _fetch(self, url, kind="html", referer=None, timeout=30):
+        last = None
+        for name, session in self._get_sessions():
+            self._warm_up(name, session)
+            try:
+                resp = session.get(
+                    url,
+                    headers=self._headers(kind, referer),
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+            except Exception as e:
+                print(
+                    f"[{self.source_name}] [{name}] request failed for {url}: {e}",
+                    file=sys.stderr,
+                )
+                continue
+            last = resp
+            print(
+                f"[{self.source_name}] [{name}] {url} -> {resp.status_code} | "
+                f"{resp.headers.get('Content-Type')} | {len(resp.content)} bytes",
+                file=sys.stderr,
+            )
+            if self._acceptable(resp, kind):
+                return resp
+        return last
+
+    def scrape(self):
+        try:
+            pdf_url, pdf_response = self._fetch_latest_bulletin_pdf()
             if not pdf_response:
                 raise ValueError(
                     "No reachable bulletin PDF found for the current or previous week."

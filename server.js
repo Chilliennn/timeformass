@@ -17,7 +17,7 @@ const SCRAPER_ROUTES = {
   st_john_btn: { host: 'stjohnkl.com.my', names: ['Cathedral of St John the Evangelist'] },
   holy_rosary_btn: { host: 'hrckl.com', names: ['Holy Rosary Church'] },
   ofkl: { host: 'olfkl.com', names: ['Church of Our Lady of Fatima', 'Church of Our Lady of Fatima (OFKL)'] },
-  assumption_pj_btn: { host: 'assumptionpj.org', names: ['Assumption Church PJ', 'Assumption Church'] },
+  assumption_pj_btn: { host: 'assumptionpj.org', names: ['Assumption Church PJ', 'Assumption Church', 'Church of the Assumption, PJ'] },
 };
 
 const getConfiguredParish = (parishes, route) => parishes.find((parish) => {
@@ -38,13 +38,15 @@ app.post('/api/scrape', async (req, res) => {
 
   if (adminId === undefined || triggerId === undefined) {
     return res.status(400).json({
-      error: 'Request body must include adminId, triggerId, and templateId.'
+      error: 'Request body must include adminId, triggerId, and templateId.',
+      detail: 'Request body must include adminId, triggerId, and templateId.'
     });
   }
 
   if (parseInt(adminId, 10) !== 1) {
     return res.status(403).json({
-      error: 'Access Denied: Scraping capabilities are restricted to the System Super Admin.'
+      error: 'Access Denied: Scraping capabilities are restricted to the System Super Admin.',
+      detail: 'Access Denied: Scraping capabilities are restricted to the System Super Admin.'
     });
   }
 
@@ -53,14 +55,17 @@ app.post('/api/scrape', async (req, res) => {
   const scraperRoute = SCRAPER_ROUTES[triggerId];
 
   if (!scraperRoute) {
-    return res.status(400).json({ error: `Unknown scraper trigger: ${triggerId}` });
+    return res.status(400).json({ error: `Unknown scraper trigger: ${triggerId}`, detail: `Unknown scraper trigger: ${triggerId}` });
   }
 
   try {
     const parishes = await parishRepository.findAll();
     const configuredParish = getConfiguredParish(parishes, scraperRoute);
     if (!configuredParish) {
-      return res.status(500).json({ error: `No parish is configured for scraper ${triggerId}.` });
+      return res.status(500).json({
+        error: `No parish is configured for scraper ${triggerId}.`,
+        detail: `No parish is configured for scraper ${triggerId}.`
+      });
     }
 
     targetParishId = configuredParish.parish_id;
