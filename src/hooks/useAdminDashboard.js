@@ -706,7 +706,7 @@ export function useAdminDashboard(navigate) {
     editingSchedule, setEditingSchedule, viewSchedule, setViewSchedule,
     pendingDeleteSchedule, setPendingDeleteSchedule, showClearDraftsConfirm, setShowClearDraftsConfirm,
     editStartTime, setEditStartTime, editEndTime, setEditEndTime, editLanguage, setEditLanguage,
-    editNotes, setEditNotes, hoursLabels, formatHourLabel, minutesToPixels, columnHeightPx,
+    editNotes, setEditNotes, hoursLabels, formatHourLabel, timeStringToMinutesFromStart, minutesToPixels, columnHeightPx,
     DAY_START_HOUR, getWeekDates, formatDateForDb, detectOverlapsAndGroup, handlePointerDown,
     handlePointerMove, handlePointerUp, handleTriggerScraper, handleAddMassType, handleDeleteMassType,
     handleAddScheduleFromType, requestDeleteSchedule, confirmDeleteSchedule, handleApproveAllDrafts,

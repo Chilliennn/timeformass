@@ -26,14 +26,16 @@ function AdminDashboard() {
     const isActive = state.activeScheduleId === schedule.template_schedule_id;
     const massTypeName = schedule.mass_types?.name || "";
     const shortName = massTypeName.substring(0, 3).toUpperCase();
+    const startMinutes = state.timeStringToMinutesFromStart(schedule.start_time);
+    const durationMinutes = state.timeStringToMinutesFromStart(schedule.end_time) - startMinutes;
     return (
       <div
         key={schedule.template_schedule_id}
         data-id={schedule.template_schedule_id}
         className={`schedule-block ${isActive ? "active" : ""}`} 
         style={{
-          top: `${state.minutesToPixels(state.admin ? 0 : 0)}px`,
-          height: `45px`,
+          top: `${state.minutesToPixels(startMinutes)}px`,
+          height: `${state.minutesToPixels(durationMinutes)}px`,
           backgroundColor: schedule.mass_types?.color || "#2C3E91",
           left: alignment.left,
           width: `calc(${alignment.width} - 4px)`,
@@ -61,13 +63,16 @@ function AdminDashboard() {
   const renderDraftBlock = (schedule, alignment = { left: "0%", width: "100%" }) => {
     const massTypeName = schedule.mass_types?.name || "Scraped Draft";
     const shortName = massTypeName.substring(0, 3).toUpperCase();
+    const startMinutes = state.timeStringToMinutesFromStart(schedule.start_time);
+    const durationMinutes = state.timeStringToMinutesFromStart(schedule.end_time) - startMinutes;
     return (
       <div
         key={`draft-${schedule.template_schedule_id}`}
         data-id={`draft-${schedule.template_schedule_id}`}
         className="schedule-block draft-schedule-block"
         style={{
-          height: `55px`,
+          top: `${state.minutesToPixels(startMinutes)}px`,
+          height: `${state.minutesToPixels(durationMinutes)}px`,
           backgroundColor: "rgba(107, 163, 232, 0.14)",
           border: "2px dashed rgba(44, 62, 145, 0.55)",
           color: "#2c3e91",
